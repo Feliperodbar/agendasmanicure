@@ -1,5 +1,5 @@
 import React from 'react';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Instagram } from 'lucide-react';
 import { isSeasonalPeriod, SEASONAL_WARNING_MESSAGE } from '../utils/timezone';
 
 interface HeaderProps {
@@ -23,20 +23,17 @@ export function Header({ mode, onModeChange }: HeaderProps) {
           <h1 className="font-heading font-extrabold text-[21px] leading-tight text-[#1a1012] tracking-tight">
             Natália Marcela | Nail designer
           </h1>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex items-center gap-2 mt-1.5">
             <a
               href="https://instagram.com/nataliamarcelanail"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs font-semibold text-[#802334] underline hover:text-[#5c1724] inline-flex items-center gap-0.5"
+              className="text-sm font-semibold text-[#802334] underline hover:text-[#5c1724] inline-flex items-center gap-0.5"
             >
+              <Instagram size={13} aria-hidden="true" />
               @nataliamarcelanail
               <ExternalLink size={11} className="inline ml-0.5" />
             </a>
-            <span className="text-[11px] text-gray-400">•</span>
-            <span className="text-[11px] font-medium text-gray-500">
-              Sinal de 50%
-            </span>
           </div>
         </div>
       </div>

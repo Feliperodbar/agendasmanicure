@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 import { DEFAULT_BUSINESS_HOURS } from '../utils/slots';
@@ -227,6 +228,59 @@ export const supabaseClient: SupabaseClient | null =
     : null;
 
 export const isUsingSupabase = !!supabaseClient;
+
+const supabaseConfigKeyMap: Record<string, string> = {
+  chave_pix: 'chave_pix',
+  buffer_minutos: 'buffer_min',
+  sinal_percentual: 'sinal_percentual',
+  tolerancia_atraso_minutos: 'tolerancia_atraso_min',
+  antecedencia_estorno_horas: 'horas_estorno',
+  antecedencia_remarcacao_horas: 'horas_remarcacao',
+  horarios_funcionamento: 'horarios',
+};
+
+export async function loadSupabaseConfig(): Promise<void> {
+  if (!supabaseClient) return;
+
+  const { data, error } = await supabaseClient.from('configuracoes').select('*').limit(1).single();
+  if (error) {
+    throw new Error(`Não foi possível carregar as configurações do Supabase: ${error.message}`);
+  }
+  if (!data) return;
+
+  const now = new Date().toISOString();
+  for (const [appKey, databaseKey] of Object.entries(supabaseConfigKeyMap)) {
+    if (data[databaseKey] !== undefined && data[databaseKey] !== null) {
+      memoryDb.configuracoes.set(appKey, {
+        id: String(data.id),
+        chave: appKey,
+        valor: data[databaseKey],
+        atualizado_em: data.atualizado_em || now,
+      });
+    }
+  }
+}
+
+export async function saveSupabaseConfig(configs: Record<string, unknown>): Promise<void> {
+  if (!supabaseClient) return;
+
+  const { data, error: readError } = await supabaseClient.from('configuracoes').select('id').limit(1).single();
+  if (readError || !data) {
+    throw new Error(`Não foi possível localizar as configurações no Supabase: ${readError?.message || 'registro ausente'}`);
+  }
+
+  const update = Object.fromEntries(
+    Object.entries(configs)
+      .filter(([key, value]) => supabaseConfigKeyMap[key] && value !== undefined)
+      .map(([key, value]) => [supabaseConfigKeyMap[key], value]),
+  );
+  if (Object.keys(update).length === 0) return;
+
+  const { error } = await supabaseClient.from('configuracoes').update(update).eq('id', data.id);
+  if (error) {
+    throw new Error(`Não foi possível salvar as configurações no Supabase: ${error.message}`);
+  }
+}
 
 // Hash PBKDF2 para PIN
 export function hashPin(pin: string): string {

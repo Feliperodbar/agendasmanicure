@@ -1,15 +1,13 @@
 import express, { Request, Response, NextFunction } from 'express';
+import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import dotenv from 'dotenv';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, Cliente, Agendamento } from './src/server/db';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, Cliente, Agendamento } from './src/server/db';
 import { validateWhatsApp } from './src/utils/phone';
 import { calculateAvailableSlots } from './src/utils/slots';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor } from './src/utils/rules';
 import { getNowInSaoPaulo, toSaoPauloISO, formatInSaoPaulo } from './src/utils/timezone';
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -784,7 +782,7 @@ app.get('/api/admin/configuracoes', requireAdmin, (req, res) => {
   res.json({ configs });
 });
 
-app.post('/api/admin/configuracoes', requireAdmin, (req, res) => {
+app.post('/api/admin/configuracoes', requireAdmin, async (req, res) => {
   const { configs } = req.body;
   if (!configs || typeof configs !== 'object') {
     return res.status(400).json({ error: 'Configurações inválidas.' });
@@ -800,7 +798,13 @@ app.post('/api/admin/configuracoes', requireAdmin, (req, res) => {
     });
   }
 
-  res.json({ success: true });
+  try {
+    await saveSupabaseConfig(configs);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(502).json({ error: 'Não foi possível salvar as configurações no Supabase.' });
+  }
 });
 
 // Exportação CSV de agendamentos
@@ -876,4 +880,9 @@ async function setupVite() {
   });
 }
 
-setupVite().catch(console.error);
+loadSupabaseConfig()
+  .then(() => setupVite())
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
