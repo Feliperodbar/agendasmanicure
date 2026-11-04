@@ -15,6 +15,11 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cookieParser());
 
+const configInitialization = loadSupabaseConfig();
+app.use((_req, _res, next) => {
+  configInitialization.then(() => next()).catch(next);
+});
+
 // -------------------------------------------------------------
 // Middleware de Autenticação do Admin (PIN / Sessão)
 // -------------------------------------------------------------
@@ -880,9 +885,13 @@ async function setupVite() {
   });
 }
 
-loadSupabaseConfig()
-  .then(() => setupVite())
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  });
+export default app;
+
+if (!process.env.VERCEL) {
+  configInitialization
+    .then(() => setupVite())
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    });
+}
