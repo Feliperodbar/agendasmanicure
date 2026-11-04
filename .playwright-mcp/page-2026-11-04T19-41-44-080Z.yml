@@ -1,0 +1,23 @@
+- main [ref=e4]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]: "N"
+        - generic [ref=e10]:
+          - heading "Natália Marcela | Nail designer" [level=1] [ref=e11]
+          - link "@nataliamarcelanail" [ref=e13] [cursor=pointer]:
+            - /url: https://instagram.com/nataliamarcelanail
+      - generic [ref=e21]:
+        - button "Cliente" [ref=e22]
+        - button "Sou a manicure" [ref=e23]
+      - generic [ref=e24]:
+        - text: "Atenção — novembro e dezembro: em caso de falta ou de cancelamento com menos de 24 horas de antecedência, o pagamento antecipado"
+        - strong [ref=e25]: não será estornado
+        - text: .
+    - region [ref=e26]:
+      - heading "Escolha seu serviço" [level=2] [ref=e27]
+  - navigation "Navegação da Cliente" [ref=e29]:
+    - generic [ref=e30]:
+      - button "Agendar" [ref=e31]
+      - button "Meus horários" [ref=e35]
+      - button "Regras" [ref=e38]
