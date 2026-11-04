@@ -1,0 +1,12 @@
+# Segredos — nunca commitar o .env de verdade
+.env
+.env.*
+!.env.example
+
+# Dependências e build
+node_modules/
+dist/
+.vercel/
+
+# Sistema
+.DS_Store
