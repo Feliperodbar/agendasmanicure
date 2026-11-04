@@ -1,158 +1,154 @@
 -- ============================================================
--- 001_schema.sql — Agenda Natália Marcela (Supabase / Postgres)
--- Rode no SQL Editor do Supabase, nesta ordem: 001 → 002 → 003
--- Cria as tabelas do app. Tudo em America/Sao_Paulo na exibição;
--- os horários são guardados como timestamptz (com fuso).
+-- 001_schema.sql
+-- Aplicativo de Agendamento: Natália Marcela | Nail designer
+-- Tabelas: clientes, servicos, configuracoes, agendamentos,
+--          bloqueios, admin_auth, sessoes, lista_espera, notificacoes
 -- ============================================================
 
-create extension if not exists pgcrypto;
+-- Habilitar extensão para geração de UUID
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- ------------------------------------------------------------
--- CLIENTES — identificadas pelo WhatsApp (11 dígitos, único)
--- ------------------------------------------------------------
-create table if not exists public.clientes (
-  id          uuid primary key default gen_random_uuid(),
-  nome        text not null,
-  whatsapp    text not null unique check (whatsapp ~ '^[0-9]{11}$'),
-  observacoes text,
-  criado_em   timestamptz not null default now()
+-- 1. CLIENTES
+CREATE TABLE IF NOT EXISTS clientes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  nome TEXT NOT NULL,
+  whatsapp VARCHAR(11) NOT NULL UNIQUE,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT timezone('America/Sao_Paulo', now()),
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT timezone('America/Sao_Paulo', now())
 );
 
--- ------------------------------------------------------------
--- SERVIÇOS — catálogo editável pela manicure
--- ------------------------------------------------------------
-create table if not exists public.servicos (
-  id          uuid primary key default gen_random_uuid(),
-  nome        text not null,
-  descricao   text,
-  preco       numeric(10,2) not null check (preco >= 0),
-  duracao_min integer not null check (duracao_min > 0),
-  ativo       boolean not null default true,
-  ordem       integer not null default 0,
-  criado_em   timestamptz not null default now(),
-  atualizado_em timestamptz not null default now()
+CREATE INDEX IF NOT EXISTS idx_clientes_whatsapp ON clientes(whatsapp);
+
+-- 2. SERVICOS
+CREATE TABLE IF NOT EXISTS servicos (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  nome TEXT NOT NULL,
+  preco NUMERIC(10, 2) NOT NULL,
+  duracao_minutos INTEGER NOT NULL,
+  descricao TEXT,
+  ordem INTEGER NOT NULL DEFAULT 0,
+  ativo BOOLEAN NOT NULL DEFAULT true,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT timezone('America/Sao_Paulo', now()),
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT timezone('America/Sao_Paulo', now())
 );
 
--- ------------------------------------------------------------
--- CONFIGURAÇÕES — registro único (id = 1): perfil, Pix e regras
--- ------------------------------------------------------------
-create table if not exists public.configuracoes (
-  id                          integer primary key check (id = 1),
-  nome_exibicao               text not null,
-  instagram                   text,
-  chave_pix                   text,
-  buffer_min                  integer not null default 10,
-  antecedencia_estorno_horas  integer not null default 24,
-  antecedencia_remarcar_horas integer not null default 24,
-  sinal_percentual            integer not null default 50
-                              check (sinal_percentual between 0 and 100),
-  tolerancia_atraso_min       integer not null default 10,
-  horarios                    jsonb not null default '{}'::jsonb,
-  atualizado_em               timestamptz not null default now()
+-- 3. CONFIGURACOES
+CREATE TABLE IF NOT EXISTS configuracoes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  chave TEXT UNIQUE NOT NULL,
+  valor JSONB NOT NULL,
+  descricao TEXT,
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT timezone('America/Sao_Paulo', now())
 );
 
--- ------------------------------------------------------------
--- AGENDAMENTOS — código NM-0001, NM-0002... gerado sozinho.
--- preco_snapshot / duracao_snapshot congelam o valor na hora
--- da marcação: mudar o serviço depois não mexe no passado.
--- ------------------------------------------------------------
-create sequence if not exists public.agendamento_codigo_seq;
-
-create table if not exists public.agendamentos (
-  id               uuid primary key default gen_random_uuid(),
-  codigo           text not null unique
-                   default ('NM-' || lpad(nextval('public.agendamento_codigo_seq')::text, 4, '0')),
-  cliente_id       uuid not null references public.clientes (id),
-  servico_id       uuid references public.servicos (id),
-  inicio           timestamptz not null,
-  fim              timestamptz not null check (fim > inicio),
-  status           text not null default 'pendente'
-                   check (status in ('pendente', 'confirmado', 'concluido', 'cancelado', 'falta')),
-  preco_snapshot   numeric(10,2) not null,
-  duracao_snapshot integer not null,
-  sinal_valor      numeric(10,2) not null default 0,
-  sinal_pago       boolean not null default false,
-  id_externo_sync  text,
-  criado_em        timestamptz not null default now(),
-  atualizado_em    timestamptz not null default now()
+-- 4. AGENDAMENTOS
+CREATE TABLE IF NOT EXISTS agendamentos (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  codigo VARCHAR(10) UNIQUE NOT NULL, -- Ex: NM-0001
+  cliente_id UUID NOT NULL REFERENCES clientes(id) ON DELETE RESTRICT,
+  servico_id UUID NOT NULL REFERENCES servicos(id) ON DELETE RESTRICT,
+  data_hora_inicio TIMESTAMPTZ NOT NULL,
+  data_hora_fim TIMESTAMPTZ NOT NULL,
+  duracao_snapshot INTEGER NOT NULL,
+  preco_snapshot NUMERIC(10, 2) NOT NULL,
+  valor_sinal NUMERIC(10, 2) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pendente', -- pendente, confirmado, concluido, cancelado, falta
+  sinal_confirmado BOOLEAN NOT NULL DEFAULT false,
+  estorno_elegivel BOOLEAN NOT NULL DEFAULT true,
+  observacoes TEXT,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT timezone('America/Sao_Paulo', now()),
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT timezone('America/Sao_Paulo', now())
 );
 
--- ------------------------------------------------------------
--- BLOQUEIOS — dia inteiro ou um intervalo sem atendimento
--- ------------------------------------------------------------
-create table if not exists public.bloqueios (
-  id        uuid primary key default gen_random_uuid(),
-  inicio    timestamptz not null,
-  fim       timestamptz not null check (fim > inicio),
-  dia_todo  boolean not null default false,
-  motivo    text,
-  criado_em timestamptz not null default now()
+CREATE INDEX IF NOT EXISTS idx_agendamentos_datas ON agendamentos(data_hora_inicio, data_hora_fim);
+CREATE INDEX IF NOT EXISTS idx_agendamentos_status ON agendamentos(status);
+CREATE INDEX IF NOT EXISTS idx_agendamentos_codigo ON agendamentos(codigo);
+
+-- 5. BLOQUEIOS
+CREATE TABLE IF NOT EXISTS bloqueios (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  data_inicio TIMESTAMPTZ NOT NULL,
+  data_fim TIMESTAMPTZ NOT NULL,
+  motivo TEXT NOT NULL,
+  dia_inteiro BOOLEAN NOT NULL DEFAULT false,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT timezone('America/Sao_Paulo', now())
 );
 
--- ------------------------------------------------------------
--- ADMIN_AUTH — registro único (id = 1). Guarda SÓ o pin_hash
--- (versão embaralhada do PIN). O PIN em texto NUNCA entra aqui.
--- O PIN é definido pela manicure no primeiro acesso pelo app.
--- ------------------------------------------------------------
-create table if not exists public.admin_auth (
-  id            integer primary key check (id = 1),
-  pin_hash      text not null,
-  tentativas    integer not null default 0,
-  bloqueado_ate timestamptz,
-  atualizado_em timestamptz not null default now()
+CREATE INDEX IF NOT EXISTS idx_bloqueios_datas ON bloqueios(data_inicio, data_fim);
+
+-- 6. ADMIN_AUTH
+CREATE TABLE IF NOT EXISTS admin_auth (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  pin_hash TEXT NOT NULL,
+  tentativas_falhas INTEGER NOT NULL DEFAULT 0,
+  bloqueado_ate TIMESTAMPTZ,
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT timezone('America/Sao_Paulo', now())
 );
 
--- ------------------------------------------------------------
--- SESSÕES — login da manicure (token guardado como hash).
--- Sessão vale 30 dias no aparelho; Sair revoga na hora.
--- ------------------------------------------------------------
-create table if not exists public.sessoes (
-  id         uuid primary key default gen_random_uuid(),
-  token_hash text not null unique,
-  criado_em  timestamptz not null default now(),
-  expira_em  timestamptz not null,
-  revogado   boolean not null default false
+-- 7. SESSOES
+CREATE TABLE IF NOT EXISTS sessoes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  token_hash TEXT UNIQUE NOT NULL,
+  expira_em TIMESTAMPTZ NOT NULL,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT timezone('America/Sao_Paulo', now())
 );
 
--- ------------------------------------------------------------
--- LISTA DE ESPERA — cliente aguardando vaga num dia/período
--- ------------------------------------------------------------
-create table if not exists public.lista_espera (
-  id        uuid primary key default gen_random_uuid(),
-  nome      text not null,
-  whatsapp  text not null check (whatsapp ~ '^[0-9]{11}$'),
-  data      date not null,
-  periodo   text not null default 'qualquer'
-            check (periodo in ('manha', 'tarde', 'qualquer')),
-  status    text not null default 'aguardando'
-            check (status in ('aguardando', 'ofertado', 'atendido', 'cancelado')),
-  criado_em timestamptz not null default now()
+CREATE INDEX IF NOT EXISTS idx_sessoes_token_hash ON sessoes(token_hash);
+
+-- 8. LISTA_ESPERA
+CREATE TABLE IF NOT EXISTS lista_espera (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  nome TEXT NOT NULL,
+  whatsapp VARCHAR(11) NOT NULL,
+  data DATE NOT NULL,
+  periodo VARCHAR(20) NOT NULL DEFAULT 'qualquer', -- manha, tarde, qualquer
+  notificado BOOLEAN NOT NULL DEFAULT false,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT timezone('America/Sao_Paulo', now())
 );
 
--- ------------------------------------------------------------
--- NOTIFICAÇÕES — registro dos avisos (hoje simulados: nenhum
--- provedor real conectado; quando conectar, muda só o status)
--- ------------------------------------------------------------
-create table if not exists public.notificacoes (
-  id             uuid primary key default gen_random_uuid(),
-  agendamento_id uuid references public.agendamentos (id),
-  destinatario   text not null check (destinatario in ('cliente', 'manicure')),
-  canal          text not null check (canal in ('whatsapp', 'sms', 'email', 'app')),
-  modelo         text not null,
-  status         text not null default 'simulado',
-  agendado_para  timestamptz,
-  enviado_em     timestamptz,
-  criado_em      timestamptz not null default now()
+CREATE INDEX IF NOT EXISTS idx_lista_espera_data ON lista_espera(data);
+
+-- 9. NOTIFICACOES
+CREATE TABLE IF NOT EXISTS notificacoes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  agendamento_id UUID REFERENCES agendamentos(id) ON DELETE CASCADE,
+  tipo VARCHAR(50) NOT NULL,
+  canal VARCHAR(20) NOT NULL, -- whatsapp, sms, email
+  mensagem TEXT NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'simulado', -- simulado, pendente, enviado, falha
+  enviado_em TIMESTAMPTZ,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT timezone('America/Sao_Paulo', now())
 );
 
--- ------------------------------------------------------------
--- ÍNDICES — agenda por dia/status e busca da cliente
--- ------------------------------------------------------------
-create index if not exists idx_agendamentos_inicio
-  on public.agendamentos (inicio);
-create index if not exists idx_agendamentos_status
-  on public.agendamentos (status);
-create index if not exists idx_agendamentos_cliente
-  on public.agendamentos (cliente_id);
-create index if not exists idx_lista_espera_data
-  on public.lista_espera (data);
+-- ============================================================
+-- SEED INICIAL (Conforme catálogo oficial do negócio)
+-- ============================================================
+
+INSERT INTO servicos (nome, preco, duracao_minutos, descricao, ordem, ativo)
+VALUES
+  ('Alongamento Molde F1', 130.00, 120, 'Alongamento completo com acabamento impecável e alta durabilidade.', 1, true),
+  ('Banho de Gel', 100.00, 90, 'Camada fortalecedora sobre a unha natural para proteger contra quebras.', 2, true),
+  ('Manutenção', 95.00, 60, 'Reposição do gel, alinhamento e acabamento perfeito.', 3, true),
+  ('Gel no Pé', 65.00, 60, 'Esmaltação e reforço em gel nos pés com durabilidade prolongada.', 4, true),
+  ('Esmaltação em Gel', 60.00, 60, 'Brilho intenso e secagem instantânea na cabine UV.', 5, true)
+ON CONFLICT DO NOTHING;
+
+-- Configurações de horários e regras operacionais
+INSERT INTO configuracoes (chave, valor, descricao)
+VALUES
+  ('chave_pix', '"nataliamarcela49@gmail.com"', 'Chave Pix para envio do sinal de 50%'),
+  ('sinal_percentual', '50', 'Percentual obrigatório de sinal antecipado'),
+  ('buffer_minutos', '10', 'Tempo de buffer entre atendimentos em minutos'),
+  ('tolerancia_atraso_minutos', '10', 'Tolerância máxima de atraso antes de cancelamento sem estorno'),
+  ('antecedencia_estorno_horas', '24', 'Horas mínimas de antecedência para cancelamento com direito a estorno'),
+  ('antecedencia_remarcacao_horas', '24', 'Horas mínimas de antecedência para cliente remarcar'),
+  ('horarios_funcionamento', '{
+    "0": null,
+    "1": {"inicio": "09:00", "fim": "18:00"},
+    "2": {"inicio": "09:00", "fim": "18:00"},
+    "3": {"inicio": "09:00", "fim": "18:00"},
+    "4": {"inicio": "09:00", "fim": "18:00"},
+    "5": {"inicio": "09:00", "fim": "19:00"},
+    "6": {"inicio": "09:00", "fim": "16:00"}
+  }', 'Horários de funcionamento por dia da semana (0=Domingo fechado, 1-6=Segunda a Sábado)')
+ON CONFLICT (chave) DO NOTHING;

@@ -1,0 +1,6 @@
+{
+  "name": "Natália Marcela - Nail Designer",
+  "description": "Aplicativo de agendamento mobile-first para manicure autônoma com cálculo de disponibilidade em tempo real e gestão completa da agenda.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@theme {
+  --font-heading: 'Jost', sans-serif;
+  --font-sans: 'Nunito Sans', sans-serif;
+  --color-pastel-pink: #F7C4D0;
+  --color-wine: #A82647;
+}
+
+:root {
+  --font-jost: 'Jost', sans-serif;
+  --font-nunito: 'Nunito Sans', sans-serif;
+}
+
+body {
+  font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #F8F5F6;
+  color: #221C1D;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+input, textarea, select, button, a {
+  user-select: auto;
+}
+
+.font-heading {
+  font-family: 'Jost', sans-serif;
+}

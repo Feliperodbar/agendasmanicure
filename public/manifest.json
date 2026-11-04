@@ -1,0 +1,16 @@
+{
+  "name": "Natália Marcela | Nail designer",
+  "short_name": "Natália Nails",
+  "description": "Agendamento online para manicure autônoma",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8F5F6",
+  "theme_color": "#F7C4D0",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}
