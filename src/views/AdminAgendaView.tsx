@@ -382,7 +382,7 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
                   </span>
                 )}
                 {isToday && (
-                  <svg className="absolute top-0 right-0 w-4 h-4 pointer-events-none" viewBox="0 0 10 10" title="Hoje">
+                  <svg className="absolute top-0 right-0 w-4 h-4 pointer-events-none" viewBox="0 0 10 10" aria-label="Hoje">
                     <polygon points="0,0 10,0 10,10" fill={status?.color ? '#FFFFFF' : '#802334'} />
                   </svg>
                 )}

@@ -3,14 +3,14 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, Cliente, Agendamento } from './src/server/db';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, Cliente, Servico, Bloqueio, Agendamento } from './src/server/db';
 import { validateWhatsApp } from './src/utils/phone';
 import { calculateAvailableSlots } from './src/utils/slots';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor } from './src/utils/rules';
 import { getNowInSaoPaulo, toSaoPauloISO, formatInSaoPaulo } from './src/utils/timezone';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 app.use(express.json());
 app.use(cookieParser());
