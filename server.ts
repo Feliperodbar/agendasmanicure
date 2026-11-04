@@ -15,9 +15,11 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cookieParser());
 
-const configInitialization = loadSupabaseConfig();
+const configInitialization = loadSupabaseConfig().catch((error) => {
+  console.error(error);
+});
 app.use((_req, _res, next) => {
-  configInitialization.then(() => next()).catch(next);
+  configInitialization.then(() => next());
 });
 
 // -------------------------------------------------------------
