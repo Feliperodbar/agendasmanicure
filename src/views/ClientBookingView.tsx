@@ -107,6 +107,12 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange }: Clie
     }
   };
 
+  const formatDateForDisplay = (value: string) => {
+    if (!value) return '';
+    const [year, month, day] = value.split('-');
+    return `${day}/${month}/${year.slice(-2)}`;
+  };
+
   const handleConfirmBooking = async () => {
     if (!isPhoneValid || !nome.trim() || !selectedService || !selectedSlot) {
       setErrorMsg('Preencha seu nome e um WhatsApp celular brasileiro válido.');
@@ -269,14 +275,24 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange }: Clie
             <label htmlFor="data-agendamento" className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
               Escolha a data:
             </label>
-            <input
-              id="data-agendamento"
-              type="date"
-              value={date}
-              min={new Date().toISOString().split('T')[0]}
-              onChange={(e) => handleDateChange(e.target.value)}
-              className="w-full h-12 px-3.5 rounded-2xl border border-pink-200 bg-white text-base font-semibold text-gray-900 outline-none focus:border-[#802334] focus:ring-2 focus:ring-[#F7C4D0]/50"
-            />
+            <div className="relative">
+              <input
+                id="data-agendamento"
+                type="text"
+                value={formatDateForDisplay(date)}
+                readOnly
+                aria-label="Data do agendamento no formato dia, mês e ano"
+                className="w-full h-12 px-3.5 rounded-2xl border border-pink-200 bg-white text-base font-semibold text-gray-900 outline-none focus-within:border-[#802334] focus-within:ring-2 focus-within:ring-[#F7C4D0]/50"
+              />
+              <input
+                type="date"
+                value={date}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={(e) => handleDateChange(e.target.value)}
+                aria-label="Selecionar data do agendamento"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </div>
           </div>
 
           <div>

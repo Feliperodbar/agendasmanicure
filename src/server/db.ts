@@ -229,6 +229,95 @@ export const supabaseClient: SupabaseClient | null =
 
 export const isUsingSupabase = !!supabaseClient;
 
+type Persistable = object;
+
+async function supabaseUpsert(table: string, value: Persistable): Promise<void> {
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.from(table).upsert(value);
+  if (error) console.error(`Supabase ${table} upsert failed:`, error.message);
+}
+
+async function supabaseDelete(table: string, id: string): Promise<void> {
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.from(table).delete().eq('id', id);
+  if (error) console.error(`Supabase ${table} delete failed:`, error.message);
+}
+
+async function hydrateTable<T extends Persistable>(
+  table: string,
+  target: Map<string, T>,
+  transform: (row: any) => T = (row) => row as T,
+): Promise<void> {
+  if (!supabaseClient) return;
+  const { data, error } = await supabaseClient.from(table).select('*');
+  if (error) {
+    console.error(`Não foi possível carregar ${table} do Supabase:`, error.message);
+    return;
+  }
+  target.clear();
+  for (const row of data || []) {
+    const item = transform(row as any);
+    if ((item as any).id) target.set(String((item as any).id), item);
+  }
+}
+
+export async function hydrateSupabaseData(): Promise<void> {
+  if (!supabaseClient) return;
+  await Promise.all([
+    hydrateTable('servicos', memoryDb.servicos),
+    hydrateTable('clientes', memoryDb.clientes),
+    hydrateTable('agendamentos', memoryDb.agendamentos),
+    hydrateTable('bloqueios', memoryDb.bloqueios),
+    hydrateTable('lista_espera', memoryDb.listaEspera),
+    hydrateTable('notificacoes', memoryDb.notificacoes),
+    hydrateTable('sessoes', memoryDb.sessoes, (row) => ({ ...row, id: String(row.id), token_hash: String(row.token_hash) })),
+  ]);
+  const { data: auth, error: authError } = await supabaseClient.from('admin_auth').select('*').limit(1).maybeSingle();
+  if (!authError && auth) memoryDb.adminAuth = auth as AdminAuth;
+  memoryDb.seqCounter = Array.from(memoryDb.agendamentos.values())
+    .map((item) => Number(item.codigo?.replace(/\D/g, '') || 0))
+    .reduce((max, value) => Math.max(max, value), 0);
+}
+
+export const persistServico = (value: Servico) => supabaseUpsert('servicos', value);
+export const persistCliente = (value: Cliente) => supabaseUpsert('clientes', value);
+export const persistAgendamento = (value: Agendamento) => supabaseUpsert('agendamentos', value);
+export const persistBloqueio = (value: Bloqueio) => supabaseUpsert('bloqueios', value);
+export const persistListaEspera = (value: ListaEspera) => supabaseUpsert('lista_espera', value);
+export const persistNotificacao = (value: Notificacao) => supabaseUpsert('notificacoes', value);
+export const deleteAgendamento = (id: string) => supabaseDelete('agendamentos', id);
+export const deleteBloqueio = (id: string) => supabaseDelete('bloqueios', id);
+export const persistSessao = (value: Sessao) => supabaseUpsert('sessoes', value);
+export const deleteSessao = (id: string) => supabaseDelete('sessoes', id);
+export async function deleteSessionByToken(tokenHash: string): Promise<void> {
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.from('sessoes').delete().eq('token_hash', tokenHash);
+  if (error) console.error('Supabase sessoes delete failed:', error.message);
+}
+export async function deleteAllSessoes(): Promise<void> {
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.from('sessoes').delete().not('id', 'is', null);
+  if (error) console.error('Supabase sessoes revoke failed:', error.message);
+}
+
+export async function persistAdminAuth(value: AdminAuth | null): Promise<void> {
+  if (!supabaseClient || !value) return;
+  await supabaseUpsert('admin_auth', value);
+}
+
+export async function findSupabaseSession(tokenHash: string): Promise<Sessao | null> {
+  if (!supabaseClient) return null;
+  const { data, error } = await supabaseClient.from('sessoes').select('*').eq('token_hash', tokenHash).maybeSingle();
+  if (error || !data) return null;
+  return data as Sessao;
+}
+
+export async function getSupabaseAdminAuth(): Promise<AdminAuth | null> {
+  if (!supabaseClient) return null;
+  const { data, error } = await supabaseClient.from('admin_auth').select('*').limit(1).maybeSingle();
+  return !error && data ? (data as AdminAuth) : null;
+}
+
 const supabaseConfigKeyMap: Record<string, string> = {
   chave_pix: 'chave_pix',
   buffer_minutos: 'buffer_min',

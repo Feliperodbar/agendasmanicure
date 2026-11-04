@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, Cliente, Servico, Bloqueio, Agendamento } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, persistAdminAuth, persistSessao, deleteSessao, deleteSessionByToken, deleteAllSessoes, persistServico, persistCliente, persistAgendamento, persistBloqueio, persistListaEspera, persistNotificacao, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor } from './src/utils/rules.js';
@@ -18,7 +18,7 @@ app.use(cookieParser());
 let configInitialization: Promise<void> | null = null;
 function ensureConfigLoaded(): Promise<void> {
   if (!configInitialization) {
-    configInitialization = loadSupabaseConfig().catch((error) => {
+    configInitialization = loadSupabaseConfig().then(() => hydrateSupabaseData()).catch((error) => {
       console.error(error);
     });
   }
@@ -32,17 +32,20 @@ app.use((_req, _res, next) => {
 // -------------------------------------------------------------
 // Middleware de Autenticação do Admin (PIN / Sessão)
 // -------------------------------------------------------------
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
+async function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const token = req.cookies?.nm_session || req.headers['authorization']?.replace('Bearer ', '');
   if (!token) {
     return res.status(401).json({ error: 'Acesso não autorizado. Efetue login com seu PIN.' });
   }
 
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  const sessao = memoryDb.sessoes.get(tokenHash);
+  const sessao = memoryDb.sessoes.get(tokenHash) || await findSupabaseSession(tokenHash);
 
   if (!sessao || new Date(sessao.expira_em) < new Date()) {
-    if (sessao) memoryDb.sessoes.delete(tokenHash);
+    if (sessao) {
+      memoryDb.sessoes.delete(tokenHash);
+      void deleteSessao(sessao.id);
+    }
     return res.status(401).json({ error: 'Sessão expirada. Faça login novamente.' });
   }
 
@@ -50,11 +53,11 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
 }
 
 // Checar sessão sem disparar 401
-app.get('/api/admin/session', (req, res) => {
+app.get('/api/admin/session', async (req, res) => {
   const token = req.cookies?.nm_session || req.headers['authorization']?.replace('Bearer ', '');
   if (!token) return res.json({ isLoggedIn: false });
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  const sessao = memoryDb.sessoes.get(tokenHash);
+  const sessao = memoryDb.sessoes.get(tokenHash) || await findSupabaseSession(tokenHash);
   if (!sessao || new Date(sessao.expira_em) < new Date()) {
     return res.json({ isLoggedIn: false });
   }
@@ -192,6 +195,7 @@ app.post('/api/agendamentos', (req, res) => {
     };
     memoryDb.clientes.set(cliente.id, cliente);
   }
+  void persistCliente(cliente);
 
   // Gera código sequencial NM-0001
   memoryDb.seqCounter += 1;
@@ -216,6 +220,7 @@ app.post('/api/agendamentos', (req, res) => {
     atualizado_em: now,
   };
   memoryDb.agendamentos.set(agendamentoId, novoAgendamento);
+  void persistAgendamento(novoAgendamento);
 
   // Registra notificações simuladas
   memoryDb.notificacoes.set(`notif-${Date.now()}-1`, {
@@ -228,6 +233,7 @@ app.post('/api/agendamentos', (req, res) => {
     enviado_em: now,
     criado_em: now,
   });
+  void persistNotificacao(Array.from(memoryDb.notificacoes.values()).at(-1)!);
 
   memoryDb.notificacoes.set(`notif-${Date.now()}-2`, {
     id: `notif-${Date.now()}-2`,
@@ -239,6 +245,7 @@ app.post('/api/agendamentos', (req, res) => {
     enviado_em: null,
     criado_em: now,
   });
+  void persistNotificacao(Array.from(memoryDb.notificacoes.values()).at(-1)!);
 
   memoryDb.notificacoes.set(`notif-${Date.now()}-3`, {
     id: `notif-${Date.now()}-3`,
@@ -250,6 +257,7 @@ app.post('/api/agendamentos', (req, res) => {
     enviado_em: null,
     criado_em: now,
   });
+  void persistNotificacao(Array.from(memoryDb.notificacoes.values()).at(-1)!);
 
   res.status(201).json({
     success: true,
@@ -320,6 +328,7 @@ app.post('/api/agendamentos/:id/cancelar-cliente', (req, res) => {
   ag.status = 'cancelado';
   ag.estorno_elegivel = refundCheck.eligible;
   ag.atualizado_em = now;
+  void persistAgendamento(ag);
 
   // Notificação simulada de cancelamento
   memoryDb.notificacoes.set(`notif-${Date.now()}-canc`, {
@@ -343,6 +352,7 @@ app.post('/api/agendamentos/:id/cancelar-cliente', (req, res) => {
 
   for (const entry of waitlistEntries) {
     entry.notificado = true;
+    void persistListaEspera(entry);
     memoryDb.notificacoes.set(`notif-${Date.now()}-fila-${entry.id}`, {
       id: `notif-${Date.now()}-fila-${entry.id}`,
       agendamento_id: ag.id,
@@ -353,6 +363,7 @@ app.post('/api/agendamentos/:id/cancelar-cliente', (req, res) => {
       enviado_em: now,
       criado_em: now,
     });
+    void persistNotificacao(Array.from(memoryDb.notificacoes.values()).at(-1)!);
   }
 
   res.json({
@@ -382,6 +393,7 @@ app.post('/api/lista-espera', (req, res) => {
     notificado: false,
     criado_em: new Date().toISOString(),
   });
+  void persistListaEspera(memoryDb.listaEspera.get(id)!);
 
   res.status(201).json({ success: true, id });
 });
@@ -397,13 +409,14 @@ app.get('/api/admin/check-setup', (req, res) => {
 });
 
 // Primeiro acesso: Definir PIN
-app.post('/api/admin/setup-pin', (req, res) => {
+app.post('/api/admin/setup-pin', async (req, res) => {
   const { pin } = req.body;
   if (!/^\d{4}$/.test(pin || '')) {
     return res.status(400).json({ error: 'O PIN deve ter exatamente 4 números.' });
   }
 
-  if (memoryDb.adminAuth?.pin_hash) {
+  const existingAuth = memoryDb.adminAuth || await getSupabaseAdminAuth();
+  if (existingAuth?.pin_hash) {
     return res.status(400).json({ error: 'O PIN já foi configurado anteriormente.' });
   }
 
@@ -416,18 +429,21 @@ app.post('/api/admin/setup-pin', (req, res) => {
     bloqueado_ate: null,
     atualizado_em: now,
   };
+  void persistAdminAuth(memoryDb.adminAuth);
 
   // Cria sessão e cookie
   const rawToken = crypto.randomBytes(32).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
   const expiraEm = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  memoryDb.sessoes.set(tokenHash, {
+  const session: any = {
     id: `sess-${Date.now()}`,
     token_hash: tokenHash,
     expira_em: expiraEm,
     criado_em: now,
-  });
+  };
+  memoryDb.sessoes.set(tokenHash, session);
+  void persistSessao(session);
 
   res.cookie('nm_session', rawToken, {
     httpOnly: true,
@@ -440,12 +456,13 @@ app.post('/api/admin/setup-pin', (req, res) => {
 });
 
 // Login por PIN com bloqueio por 5 minutos após 5 erros
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', async (req, res) => {
   const { pin } = req.body;
   if (!/^\d{4}$/.test(pin || '')) {
     return res.status(400).json({ error: 'PIN inválido. Digite 4 números.' });
   }
 
+  if (!memoryDb.adminAuth) memoryDb.adminAuth = await getSupabaseAdminAuth();
   if (!memoryDb.adminAuth) {
     return res.status(400).json({ error: 'PIN ainda não configurado. Defina no primeiro acesso.' });
   }
@@ -469,12 +486,14 @@ app.post('/api/admin/login', (req, res) => {
       bloqueadoAte = new Date(Date.now() + 5 * 60 * 1000).toISOString();
       memoryDb.adminAuth.tentativas_falhas = 0;
       memoryDb.adminAuth.bloqueado_ate = bloqueadoAte;
+      void persistAdminAuth(memoryDb.adminAuth);
       return res.status(429).json({
         error: '5 tentativas erradas. Acesso bloqueado por 5 minutos.',
       });
     }
 
     memoryDb.adminAuth.tentativas_falhas = falhas;
+    void persistAdminAuth(memoryDb.adminAuth);
     return res.status(401).json({
       error: `PIN incorreto. Restam ${5 - falhas} tentativa(s).`,
     });
@@ -483,17 +502,20 @@ app.post('/api/admin/login', (req, res) => {
   // Sucesso
   memoryDb.adminAuth.tentativas_falhas = 0;
   memoryDb.adminAuth.bloqueado_ate = null;
+  void persistAdminAuth(memoryDb.adminAuth);
 
   const rawToken = crypto.randomBytes(32).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
   const expiraEm = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  memoryDb.sessoes.set(tokenHash, {
+  const session: any = {
     id: `sess-${Date.now()}`,
     token_hash: tokenHash,
     expira_em: expiraEm,
     criado_em: new Date().toISOString(),
-  });
+  };
+  memoryDb.sessoes.set(tokenHash, session);
+  void persistSessao(session);
 
   res.cookie('nm_session', rawToken, {
     httpOnly: true,
@@ -506,11 +528,12 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 // Logout
-app.post('/api/admin/logout', (req, res) => {
+app.post('/api/admin/logout', async (req, res) => {
   const token = req.cookies?.nm_session;
   if (token) {
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     memoryDb.sessoes.delete(tokenHash);
+    void deleteSessionByToken(tokenHash);
   }
   res.clearCookie('nm_session');
   res.json({ success: true });
@@ -529,9 +552,11 @@ app.post('/api/admin/trocar-pin', requireAdmin, (req, res) => {
 
   memoryDb.adminAuth.pin_hash = hashPin(newPin);
   memoryDb.adminAuth.atualizado_em = new Date().toISOString();
+  void persistAdminAuth(memoryDb.adminAuth);
 
   // Revoga todas as sessões anteriores
   memoryDb.sessoes.clear();
+  void deleteAllSessoes();
   res.clearCookie('nm_session');
 
   res.json({ success: true, message: 'PIN alterado com sucesso! Faça login novamente.' });
@@ -603,6 +628,7 @@ app.patch('/api/admin/agendamentos/:id/status', requireAdmin, (req, res) => {
   if (status === 'confirmado') ag.sinal_confirmado = true;
 
   ag.atualizado_em = new Date().toISOString();
+  void persistAgendamento(ag);
   res.json({ success: true, agendamento: ag });
 });
 
@@ -624,6 +650,7 @@ app.post('/api/admin/agendamentos/:id/remarcar', requireAdmin, (req, res) => {
   ag.data_hora_inicio = startISO;
   ag.data_hora_fim = endISO;
   ag.atualizado_em = new Date().toISOString();
+  void persistAgendamento(ag);
 
   // Notificação simulada
   memoryDb.notificacoes.set(`notif-${Date.now()}-remarc`, {
@@ -636,6 +663,7 @@ app.post('/api/admin/agendamentos/:id/remarcar', requireAdmin, (req, res) => {
     enviado_em: new Date().toISOString(),
     criado_em: new Date().toISOString(),
   });
+  void persistNotificacao(Array.from(memoryDb.notificacoes.values()).at(-1)!);
 
   res.json({ success: true, agendamento: ag });
 });
@@ -645,6 +673,7 @@ app.delete('/api/admin/agendamentos/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
   const deleted = memoryDb.agendamentos.delete(id);
   if (!deleted) return res.status(404).json({ error: 'Agendamento não encontrado.' });
+  void deleteAgendamento(id);
   res.json({ success: true });
 });
 
@@ -673,6 +702,7 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, (req, res) => {
     };
     memoryDb.clientes.set(cliente.id, cliente);
   }
+  void persistCliente(cliente);
 
   memoryDb.seqCounter += 1;
   const codigo = `NM-${String(memoryDb.seqCounter).padStart(4, '0')}`;
@@ -702,6 +732,7 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, (req, res) => {
     atualizado_em: now,
   };
   memoryDb.agendamentos.set(id, ag);
+  void persistAgendamento(ag);
 
   res.status(201).json({ success: true, agendamento: ag });
 });
@@ -727,6 +758,7 @@ app.post('/api/admin/servicos', requireAdmin, (req, res) => {
     atualizado_em: now,
   };
   memoryDb.servicos.set(id, servico);
+  void persistServico(servico);
   res.status(201).json({ success: true, servico });
 });
 
@@ -742,6 +774,7 @@ app.put('/api/admin/servicos/:id', requireAdmin, (req, res) => {
   if (duracao_minutos !== undefined) servico.duracao_minutos = Number(duracao_minutos);
   if (descricao !== undefined) servico.descricao = descricao.trim();
   servico.atualizado_em = new Date().toISOString();
+  void persistServico(servico);
 
   res.json({ success: true, servico });
 });
@@ -754,6 +787,7 @@ app.delete('/api/admin/servicos/:id', requireAdmin, (req, res) => {
   // Inativa o serviço
   servico.ativo = false;
   servico.atualizado_em = new Date().toISOString();
+  void persistServico(servico);
   res.json({ success: true });
 });
 
@@ -778,12 +812,14 @@ app.post('/api/admin/bloqueios', requireAdmin, (req, res) => {
     criado_em: now,
   };
   memoryDb.bloqueios.set(id, bloqueio);
+  void persistBloqueio(bloqueio);
   res.status(201).json({ success: true, bloqueio });
 });
 
 app.delete('/api/admin/bloqueios/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
   memoryDb.bloqueios.delete(id);
+  void deleteBloqueio(id);
   res.json({ success: true });
 });
 
