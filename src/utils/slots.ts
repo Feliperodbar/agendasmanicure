@@ -40,7 +40,7 @@ export const DEFAULT_BUSINESS_HOURS: BusinessHoursMap = {
 export function calculateAvailableSlots(params: {
   dateStr: string;                 // "YYYY-MM-DD"
   serviceDurationMinutes: number;  // Ex: 120
-  businessHours?: BusinessHoursMap;
+  businessHours?: BusinessHoursMap | string;
   bufferMinutes?: number;          // Default 10
   existingBookings?: BookingInterval[];
   blocks?: BlockInterval[];
@@ -56,12 +56,26 @@ export function calculateAvailableSlots(params: {
     nowReference = getNowInSaoPaulo(),
   } = params;
 
+  let normalizedBusinessHours: BusinessHoursMap = DEFAULT_BUSINESS_HOURS;
+  if (typeof businessHours === 'string') {
+    try {
+      const parsed = JSON.parse(businessHours) as BusinessHoursMap;
+      if (parsed && typeof parsed === 'object') {
+        normalizedBusinessHours = parsed;
+      }
+    } catch {
+      normalizedBusinessHours = DEFAULT_BUSINESS_HOURS;
+    }
+  } else if (businessHours && typeof businessHours === 'object') {
+    normalizedBusinessHours = businessHours;
+  }
+
   // 1. Obter dia da semana (0=Domingo, 6=Sábado)
   const [year, month, day] = dateStr.split('-').map(Number);
   const targetDate = new Date(year, month - 1, day, 12, 0, 0);
   const weekday = targetDate.getDay();
 
-  const dayConfig = businessHours[weekday];
+  const dayConfig = normalizedBusinessHours[weekday];
   if (!dayConfig || !dayConfig.inicio || !dayConfig.fim) {
     return []; // Domingo ou dia fechado
   }

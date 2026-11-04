@@ -9,6 +9,18 @@ test('domingo fechado não deve retornar nenhum slot', () => {
     serviceDurationMinutes: 60,
     nowReference: new Date('2026-11-01T08:00:00-03:00'),
   });
+
+  test('aceita horários de funcionamento armazenados como JSON textual', () => {
+    const slots = calculateAvailableSlots({
+      dateStr: '2026-11-13',
+      serviceDurationMinutes: 120,
+      businessHours: '{"5":{"inicio":"09:00","fim":"19:00"}}',
+      nowReference: new Date('2026-11-04T12:00:00-03:00'),
+    });
+
+    assert.equal(slots[0]?.time, '09:00');
+    assert.equal(slots.at(-1)?.time, '17:00');
+  });
   assert.equal(slots.length, 0);
 });
 
