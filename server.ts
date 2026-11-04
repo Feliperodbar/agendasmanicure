@@ -15,11 +15,18 @@ const PORT = Number(process.env.PORT || 3000);
 app.use(express.json());
 app.use(cookieParser());
 
-const configInitialization = loadSupabaseConfig().catch((error) => {
-  console.error(error);
-});
+let configInitialization: Promise<void> | null = null;
+function ensureConfigLoaded(): Promise<void> {
+  if (!configInitialization) {
+    configInitialization = loadSupabaseConfig().catch((error) => {
+      console.error(error);
+    });
+  }
+  return configInitialization;
+}
+
 app.use((_req, _res, next) => {
-  configInitialization.then(() => next());
+  ensureConfigLoaded().then(() => next());
 });
 
 // -------------------------------------------------------------
@@ -890,7 +897,7 @@ async function setupVite() {
 export default app;
 
 if (!process.env.VERCEL) {
-  configInitialization
+  ensureConfigLoaded()
     .then(() => setupVite())
     .catch((error) => {
       console.error(error);
