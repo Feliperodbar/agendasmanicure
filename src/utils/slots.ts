@@ -1,4 +1,4 @@
-import { getNowInSaoPaulo, toSaoPauloISO } from './timezone';
+import { getNowInSaoPaulo, toSaoPauloISO } from './timezone.js';
 
 export interface BusinessDayHours {
   inicio: string; // "09:00"

@@ -3,11 +3,11 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, Cliente, Servico, Bloqueio, Agendamento } from './src/server/db';
-import { validateWhatsApp } from './src/utils/phone';
-import { calculateAvailableSlots } from './src/utils/slots';
-import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor } from './src/utils/rules';
-import { getNowInSaoPaulo, toSaoPauloISO, formatInSaoPaulo } from './src/utils/timezone';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, Cliente, Servico, Bloqueio, Agendamento } from './src/server/db.js';
+import { validateWhatsApp } from './src/utils/phone.js';
+import { calculateAvailableSlots } from './src/utils/slots.js';
+import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor } from './src/utils/rules.js';
+import { getNowInSaoPaulo, toSaoPauloISO, formatInSaoPaulo } from './src/utils/timezone.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);

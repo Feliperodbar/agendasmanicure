@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
-import { DEFAULT_BUSINESS_HOURS } from '../utils/slots';
+import { DEFAULT_BUSINESS_HOURS } from '../utils/slots.js';
 
 export interface Cliente {
   id: string;
