@@ -110,49 +110,54 @@ app.get('/api/admin/manicures', requireAdmin, (_req, res) => {
 });
 
 app.post('/api/admin/manicures', requireAdmin, async (req, res) => {
-  const { name, slug, instagram, photo_url } = req.body as {
-    name?: string;
-    slug?: string;
-    instagram?: string;
-    photo_url?: string;
-  };
-  const normalizedName = String(name || '').trim();
-  const normalizedSlug = slugifyManicure(String(slug || normalizedName));
-  if (normalizedName.length < 3 || !normalizedSlug) {
-    return res.status(400).json({ error: 'Nome e slug válidos são obrigatórios.' });
-  }
-  if (Array.from(memoryDb.manicures.values()).some((item) => item.slug === normalizedSlug)) {
-    return res.status(409).json({ error: 'Este slug já está em uso.' });
-  }
+  try {
+    const { name, slug, instagram, photo_url } = req.body as {
+      name?: string;
+      slug?: string;
+      instagram?: string;
+      photo_url?: string;
+    };
+    const normalizedName = String(name || '').trim();
+    const normalizedSlug = slugifyManicure(String(slug || normalizedName));
+    if (normalizedName.length < 3 || !normalizedSlug) {
+      return res.status(400).json({ error: 'Nome e slug válidos são obrigatórios.' });
+    }
+    if (Array.from(memoryDb.manicures.values()).some((item) => item.slug === normalizedSlug)) {
+      return res.status(409).json({ error: 'Este slug já está em uso.' });
+    }
 
-  const now = new Date().toISOString();
-  const manicure: Manicure = {
-    id: crypto.randomUUID(),
-    slug: normalizedSlug,
-    name: normalizedName,
-    instagram: String(instagram || '').trim() || null,
-    photo_url: String(photo_url || '').trim() || null,
-    active: true,
-    created_at: now,
-    updated_at: now,
-  };
-  await persistManicure(manicure);
-  memoryDb.manicures.set(manicure.id, manicure);
-  const defaultServices = Array.from(memoryDb.servicos.values()).filter((service) =>
-    !service.manicure_id || service.manicure_id === memoryDb.manicures.get('default-manicure')?.id
-  );
-  for (const service of defaultServices) {
-    const copy: Servico = {
+    const now = new Date().toISOString();
+    const manicure: Manicure = {
+      id: crypto.randomUUID(),
+      slug: normalizedSlug,
+      name: normalizedName,
+      instagram: String(instagram || '').trim() || null,
+      photo_url: String(photo_url || '').trim() || null,
+      active: true,
+      created_at: now,
+      updated_at: now,
+    };
+    await persistManicure(manicure);
+    memoryDb.manicures.set(manicure.id, manicure);
+    const defaultServices = Array.from(memoryDb.servicos.values()).filter((service) =>
+      !service.manicure_id || service.manicure_id === memoryDb.manicures.get('default-manicure')?.id
+    );
+    const copies = defaultServices.map((service) => ({
       ...service,
       id: crypto.randomUUID(),
       manicure_id: manicure.id,
       criado_em: now,
       atualizado_em: now,
-    };
-    memoryDb.servicos.set(copy.id, copy);
-    await persistServico(copy);
+    }));
+    await Promise.all(copies.map(async (copy) => {
+      memoryDb.servicos.set(copy.id, copy);
+      await persistServico(copy);
+    }));
+    res.status(201).json(toPublicManicure(manicure));
+  } catch (error) {
+    console.error('Falha ao cadastrar manicure:', error);
+    res.status(500).json({ error: 'Não foi possível cadastrar a manicure. Tente novamente.' });
   }
-  res.status(201).json(toPublicManicure(manicure));
 });
 // Catálogo de serviços ativos
 app.get('/api/servicos', (req, res) => {

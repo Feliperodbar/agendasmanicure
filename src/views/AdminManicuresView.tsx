@@ -6,6 +6,18 @@ interface AdminManicuresViewProps {
   onLogout?: () => void;
 }
 
+async function readApiResponse(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) {
+    throw new Error(`O servidor respondeu sem dados (HTTP ${response.status}). Tente novamente.`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`O servidor respondeu em formato inválido (HTTP ${response.status}).`);
+  }
+}
+
 export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
   const [manicures, setManicures] = useState<Manicure[]>([]);
   const [name, setName] = useState('');
@@ -24,9 +36,13 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
         onLogout?.();
         return;
       }
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Não foi possível carregar as manicures.');
-      setManicures(Array.isArray(data) ? data : []);
+      const data = await readApiResponse(response);
+      if (!data || typeof data !== 'object') throw new Error('Resposta inválida do servidor.');
+      if (!response.ok) {
+        const message = 'error' in data && typeof data.error === 'string' ? data.error : 'Não foi possível carregar as manicures.';
+        throw new Error(message);
+      }
+      setManicures(Array.isArray(data) ? data as Manicure[] : []);
     } catch (error) {
       setFeedback({ text: error instanceof Error ? error.message : 'Erro ao carregar manicures.', type: 'error' });
     } finally {
@@ -53,9 +69,15 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
         onLogout?.();
         return;
       }
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Não foi possível cadastrar a manicure.');
-      setManicures((current) => [...current, data].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+      const data = await readApiResponse(response);
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error('Resposta inválida do servidor.');
+      }
+      if (!response.ok) {
+        const message = 'error' in data && typeof data.error === 'string' ? data.error : 'Não foi possível cadastrar a manicure.';
+        throw new Error(message);
+      }
+      setManicures((current) => [...current, data as Manicure].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
       setName('');
       setSlug('');
       setInstagram('');
