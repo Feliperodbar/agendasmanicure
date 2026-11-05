@@ -1,12 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor } from './rules';
+import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor, getDepositPercentageForDate } from './rules';
 
 test('calcula 50% de sinal com precisão monetária', () => {
   assert.equal(calculateDeposit(130), 65);
   assert.equal(calculateDeposit(95), 47.5);
   assert.equal(calculateDeposit(65), 32.5);
   assert.equal(calculateDeposit(60), 30);
+});
+
+test('dispensa o sinal em novembro e mantém o percentual configurado em dezembro e nos demais meses', () => {
+  assert.equal(getDepositPercentageForDate('2026-11-05'), 0);
+  assert.equal(getDepositPercentageForDate('2026-12-01'), 50);
+  assert.equal(getDepositPercentageForDate('2026-10-31'), 50);
+  assert.equal(getDepositPercentageForDate('2026-12-01T02:00:00.000Z'), 0);
 });
 
 test('cancelamento com mais de 24h tem direito a estorno', () => {

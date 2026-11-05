@@ -8,6 +8,24 @@ export const DEFAULT_PIX_KEY = 'nataliamarcela49@gmail.com';
 export const DEFAULT_DEPOSIT_PCT = 50;
 export const DEFAULT_CANCEL_HOURS_REFUND = 24;
 
+export function getDepositPercentageForDate(dateValue: string, defaultPercentage: number = DEFAULT_DEPOSIT_PCT): number {
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.test(dateValue);
+  let month: number;
+
+  if (dateOnlyMatch) {
+    month = Number(dateValue.slice(5, 7));
+  } else {
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return defaultPercentage;
+    month = Number(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Sao_Paulo',
+      month: '2-digit',
+    }).format(date));
+  }
+
+  return month === 11 ? 0 : defaultPercentage;
+}
+
 /**
  * Calcula o valor exato do sinal de 50%
  */

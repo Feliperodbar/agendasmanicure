@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots, BusinessHoursMap } from './src/utils/slots.js';
-import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor } from './src/utils/rules.js';
+import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor, getDepositPercentageForDate } from './src/utils/rules.js';
 import { getNowInSaoPaulo, toSaoPauloISO, formatInSaoPaulo } from './src/utils/timezone.js';
 
 const app = express();
@@ -318,7 +318,7 @@ app.post('/api/agendamentos', async (req, res) => {
     return res.status(404).json({ error: 'Serviço selecionado é inválido.' });
   }
 
-  const sinalPct = Number(configValue(req, 'sinal_percentual', 50));
+  const sinalPct = getDepositPercentageForDate(data, Number(configValue(req, 'sinal_percentual', 50)));
   const bufferMin = Number(configValue(req, 'buffer_minutos', 10));
   const chavePix = String(configValue(req, 'chave_pix', 'nataliamarcela49@gmail.com'));
 
@@ -391,8 +391,8 @@ app.post('/api/agendamentos', async (req, res) => {
     duracao_snapshot: duracao,
     preco_snapshot: servico.preco,
     valor_sinal: valorSinal,
-    status: 'pendente',
-    sinal_confirmado: false,
+    status: sinalPct === 0 ? 'confirmado' : 'pendente',
+    sinal_confirmado: sinalPct === 0,
     estorno_elegivel: true,
     criado_em: now,
     atualizado_em: now,
@@ -406,7 +406,9 @@ app.post('/api/agendamentos', async (req, res) => {
     agendamento_id: agendamentoId,
     tipo: 'confirmacao_solicitada',
     canal: 'whatsapp',
-    mensagem: `Olá, ${nome}! Seu agendamento para ${servico.nome} foi pré-reservado para ${data} às ${horario}. Para garantir o horário, o pagamento antecipado é de 50%: R$ ${valorSinal.toFixed(2)} — Enviar o pix para a chave: ${chavePix}`,
+    mensagem: sinalPct === 0
+      ? `Olá, ${nome}! Seu agendamento para ${servico.nome} em ${data} às ${horario} está confirmado. Em novembro não há cobrança de sinal.`
+      : `Olá, ${nome}! Seu agendamento para ${servico.nome} foi pré-reservado para ${data} às ${horario}. Para garantir o horário, o pagamento antecipado é de ${sinalPct}%: R$ ${valorSinal.toFixed(2)} — Enviar o pix para a chave: ${chavePix}`,
     status: 'simulado',
     enviado_em: now,
     criado_em: now,
@@ -444,6 +446,7 @@ app.post('/api/agendamentos', async (req, res) => {
     success: true,
     codigo,
     valorSinal,
+    sinalPct,
     chavePix,
     agendamento: novoAgendamento,
   });
@@ -508,7 +511,7 @@ app.post('/api/agendamentos/:id/cancelar-cliente', (req, res) => {
   const now = new Date().toISOString();
 
   ag.status = 'cancelado';
-  ag.estorno_elegivel = refundCheck.eligible;
+  ag.estorno_elegivel = Number(ag.valor_sinal) > 0 && refundCheck.eligible;
   ag.atualizado_em = now;
   void persistAgendamento(ag);
 
@@ -551,7 +554,9 @@ app.post('/api/agendamentos/:id/cancelar-cliente', (req, res) => {
   res.json({
     success: true,
     estornoElegivel: refundCheck.eligible,
-    mensagem: refundCheck.eligible
+    mensagem: Number(ag.valor_sinal) === 0
+      ? 'Agendamento cancelado com sucesso. Este agendamento não teve cobrança de sinal.'
+      : refundCheck.eligible
       ? 'Agendamento cancelado com sucesso. Como cancelou com mais de 24h de antecedência, seu sinal é elegível para estorno.'
       : 'Agendamento cancelado. Atenção: cancelamentos com menos de 24h não possuem estorno do sinal.',
   });
@@ -923,7 +928,8 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, async (req, res) => {
 
   memoryDb.seqCounter += 1;
   const codigo = `NM-${String(memoryDb.seqCounter).padStart(4, '0')}`;
-  const valorSinal = calculateDeposit(servico.preco, 50);
+  const sinalPct = getDepositPercentageForDate(data, Number(configValue(req, 'sinal_percentual', 50)));
+  const valorSinal = calculateDeposit(servico.preco, sinalPct);
 
   const startISO = toSaoPauloISO(data, horario);
   const [h, m] = horario.split(':').map(Number);
@@ -941,8 +947,8 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, async (req, res) => {
     duracao_snapshot: servico.duracao_minutos,
     preco_snapshot: servico.preco,
     valor_sinal: valorSinal,
-    status: status || 'confirmado',
-    sinal_confirmado: status === 'confirmado',
+    status: sinalPct === 0 ? 'confirmado' : status || 'confirmado',
+    sinal_confirmado: sinalPct === 0 || status === 'confirmado',
     estorno_elegivel: true,
     observacoes,
     manicure_id: servico.manicure_id || adminManicureId(req),

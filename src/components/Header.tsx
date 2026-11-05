@@ -64,9 +64,8 @@ export function Header({ mode, onModeChange, manicure, global = false, login = f
       {/* Caixa de aviso em destaque âmbar */}
       {showSeasonalWarning && (
         <div className="bg-[#FFFDE7] border border-[#FACC15] rounded-2xl p-3.5 text-xs text-gray-800 leading-relaxed shadow-2xs">
-          <span className="font-extrabold text-gray-900">Atenção — novembro e dezembro:</span>{' '}
-          em caso de falta ou de cancelamento com menos de 24 horas de antecedência, o pagamento antecipado{' '}
-          <strong className="font-bold text-gray-900">não será estornado</strong>.
+          <span className="font-extrabold text-gray-900">Atenção — regra de sinal:</span>{' '}
+          {SEASONAL_WARNING_MESSAGE}
         </div>
       )}
     </header>
