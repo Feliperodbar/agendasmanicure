@@ -575,6 +575,10 @@ export async function hydrateSupabaseData(): Promise<void> {
     .reduce((max, value) => Math.max(max, value), 0);
 }
 
+export async function refreshServicos(): Promise<void> {
+  await hydrateTable('servicos', memoryDb.servicos);
+}
+
 export const persistServico = (value: Servico) => supabaseUpsert('servicos', value);
 export async function persistServicoOrThrow(value: Servico): Promise<void> {
   if (!supabaseClient) {

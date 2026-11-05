@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistServicoOrThrow, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistServicoOrThrow, refreshServicos, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots, BusinessHoursMap } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor, getDepositPercentageForDate } from './src/utils/rules.js';
@@ -256,7 +256,9 @@ app.patch('/api/admin/manicures/:id', requireAdmin, async (req, res) => {
   res.json(toPublicManicure(manicure));
 });
 // Catálogo de serviços ativos
-app.get('/api/servicos', (req, res) => {
+app.get('/api/servicos', async (req, res) => {
+  await refreshServicos();
+  res.set('Cache-Control', 'no-store');
   const manicure = resolveManicure(req);
   if (!manicure) return res.status(404).json({ error: 'Manicure não encontrada.' });
   const servicos = Array.from(memoryDb.servicos.values())
@@ -1169,9 +1171,11 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, async (req, res) => {
 });
 
 // CRUD Serviços (Admin)
-app.get('/api/admin/servicos', requireAdmin, (req, res) => {
+app.get('/api/admin/servicos', requireAdmin, async (req, res) => {
+  await refreshServicos();
+  res.set('Cache-Control', 'no-store');
   const servicos = Array.from(memoryDb.servicos.values())
-    .filter((servico) => isInAdminScope(req, servico.manicure_id))
+    .filter((servico) => servico.ativo && isInAdminScope(req, servico.manicure_id))
     .sort((a, b) => a.ordem - b.ordem);
   res.json(servicos);
 });
@@ -1209,6 +1213,7 @@ app.post('/api/admin/servicos', requireAdmin, async (req, res) => {
 app.put('/api/admin/servicos/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { nome, preco, duracao_minutos, descricao } = req.body;
+  await refreshServicos();
   const servico = memoryDb.servicos.get(id);
 
   if (!servico) return res.status(404).json({ error: 'Serviço não encontrado.' });
@@ -1233,6 +1238,7 @@ app.put('/api/admin/servicos/:id', requireAdmin, async (req, res) => {
 
 app.delete('/api/admin/servicos/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
+  await refreshServicos();
   const servico = memoryDb.servicos.get(id);
   if (!servico) return res.status(404).json({ error: 'Serviço não encontrado.' });
   if (!isInAdminScope(req, servico.manicure_id)) return res.status(403).json({ error: 'Serviço fora do seu perfil.' });
