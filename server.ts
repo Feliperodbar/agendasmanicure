@@ -423,13 +423,13 @@ app.post('/api/admin/setup-pin', async (req, res) => {
   const pinHash = hashPin(pin);
   const now = new Date().toISOString();
   memoryDb.adminAuth = {
-    id: 'auth-1',
+    id: crypto.randomUUID(),
     pin_hash: pinHash,
     tentativas_falhas: 0,
     bloqueado_ate: null,
     atualizado_em: now,
   };
-  void persistAdminAuth(memoryDb.adminAuth);
+  await persistAdminAuth(memoryDb.adminAuth);
 
   // Cria sessão e cookie
   const rawToken = crypto.randomBytes(32).toString('hex');
@@ -437,13 +437,13 @@ app.post('/api/admin/setup-pin', async (req, res) => {
   const expiraEm = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const session: any = {
-    id: `sess-${Date.now()}`,
+    id: crypto.randomUUID(),
     token_hash: tokenHash,
     expira_em: expiraEm,
     criado_em: now,
   };
   memoryDb.sessoes.set(tokenHash, session);
-  void persistSessao(session);
+  await persistSessao(session);
 
   res.cookie('nm_session', rawToken, {
     httpOnly: true,
@@ -509,13 +509,13 @@ app.post('/api/admin/login', async (req, res) => {
   const expiraEm = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const session: any = {
-    id: `sess-${Date.now()}`,
+    id: crypto.randomUUID(),
     token_hash: tokenHash,
     expira_em: expiraEm,
     criado_em: new Date().toISOString(),
   };
   memoryDb.sessoes.set(tokenHash, session);
-  void persistSessao(session);
+  await persistSessao(session);
 
   res.cookie('nm_session', rawToken, {
     httpOnly: true,
