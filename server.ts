@@ -561,7 +561,10 @@ app.post('/api/admin/login', async (req, res) => {
     return res.status(400).json({ error: 'PIN inválido. Digite 4 números.' });
   }
 
-  if (!memoryDb.adminAuth) memoryDb.adminAuth = await getSupabaseAdminAuth();
+  const persistedAuth = await getSupabaseAdminAuth();
+  if (persistedAuth) {
+    memoryDb.adminAuth = persistedAuth;
+  }
   if (!memoryDb.adminAuth) {
     return res.status(400).json({ error: 'PIN ainda não configurado. Defina no primeiro acesso.' });
   }
