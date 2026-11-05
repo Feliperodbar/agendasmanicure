@@ -299,6 +299,53 @@ export async function persistAgendamentoOrThrow(value: Agendamento): Promise<voi
   }
 }
 
+export async function getAgendamentoById(id: string): Promise<Agendamento | null> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    return memoryDb.agendamentos.get(id) || null;
+  }
+
+  const { data, error } = await supabaseClient
+    .from('agendamentos')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Supabase agendamentos read failed: ${error.message}`);
+  }
+  return data as Agendamento | null;
+}
+
+export async function listAgendamentosInRange(
+  startISO: string,
+  endISO: string,
+  manicureId?: string | null,
+): Promise<Agendamento[] | null> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    return null;
+  }
+
+  let query = supabaseClient
+    .from('agendamentos')
+    .select('*')
+    .gte('data_hora_inicio', startISO)
+    .lt('data_hora_inicio', endISO)
+    .order('data_hora_inicio', { ascending: true });
+
+  if (manicureId) query = query.eq('manicure_id', manicureId);
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(`Supabase agendamentos range read failed: ${error.message}`);
+  }
+  return data as Agendamento[];
+}
+
 export async function waivePendingNovemberDeposits(): Promise<void> {
   const now = Date.now();
   const pendingBookings = Array.from(memoryDb.agendamentos.values()).filter((booking) =>

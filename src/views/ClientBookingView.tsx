@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { PhoneInput } from '../components/PhoneInput';
 import { Header } from '../components/Header';
-import { getNowInSaoPaulo, SEASONAL_WARNING_MESSAGE, toSaoPauloISO } from '../utils/timezone';
+import { CLIENT_DEPOSIT_SEASONAL_MESSAGE, getNowInSaoPaulo, toSaoPauloISO } from '../utils/timezone';
 import { calculateDeposit, getDepositPercentageForDate } from '../utils/rules';
 import { Clock, CheckCircle2, ChevronRight, AlertCircle, Copy, Check } from 'lucide-react';
 import type { Manicure } from '../types';
@@ -265,7 +265,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
           </h2>
 
           <div role="note" className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-xs text-amber-950 leading-relaxed">
-            <strong>Regra de sinal:</strong> agendamentos em novembro não exigem sinal antecipado. Em dezembro, permanece o sinal de 50%.
+            <strong>Regra de sinal:</strong> {CLIENT_DEPOSIT_SEASONAL_MESSAGE}
           </div>
 
           <div className="bg-white rounded-2xl border border-pink-200/80 divide-y divide-pink-100 overflow-hidden shadow-2xs">
@@ -289,8 +289,8 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
                       <h3 className="font-heading font-extrabold text-base text-[#1a1012]">{srv.nome}</h3>
                       <p className="text-xs text-gray-500 font-medium mt-0.5">
                         {sinalPct === 0
-                          ? `${srv.duracao_minutos} min • sem sinal em novembro`
-                          : `${srv.duracao_minutos} min • sinal de ${sinalPct}%: ${formatMoney(calculateDeposit(srv.preco, sinalPct))}`}
+                          ? `${srv.duracao_minutos} min • em novembro, você não paga sinal`
+                          : `${srv.duracao_minutos} min • você paga sinal de ${sinalPct}%: ${formatMoney(calculateDeposit(srv.preco, sinalPct))}`}
                       </p>
                       {srv.descricao && <p className="mt-1 text-[11px] text-gray-500">{srv.descricao}</p>}
                     </div>
@@ -444,7 +444,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
               <span>Total / sinal</span>
               <strong>
                 {formatMoney(selectedService.preco)} / {sinalPct === 0
-                  ? 'não exigido em novembro'
+                  ? 'não há sinal em novembro'
                   : formatMoney(calculateDeposit(selectedService.preco, sinalPct))}
               </strong>
             </div>
@@ -493,7 +493,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
           {/* Yellow Seasonal Banner Inside Form */}
           <div className="bg-[#FFFDE7] border border-[#FACC15] rounded-2xl p-3.5 text-xs text-gray-800 leading-relaxed shadow-2xs">
             <span className="font-extrabold text-gray-900">Atenção — regra de sinal:</span>{' '}
-            {SEASONAL_WARNING_MESSAGE}
+            {CLIENT_DEPOSIT_SEASONAL_MESSAGE}
           </div>
 
           <p className="text-[11px] text-gray-500 font-medium text-center leading-normal">

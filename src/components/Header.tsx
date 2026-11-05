@@ -1,6 +1,6 @@
 import React from 'react';
 import { ExternalLink, Instagram } from 'lucide-react';
-import { isSeasonalPeriod, SEASONAL_WARNING_MESSAGE } from '../utils/timezone';
+import { CLIENT_DEPOSIT_SEASONAL_MESSAGE, isSeasonalPeriod, SEASONAL_WARNING_MESSAGE } from '../utils/timezone';
 import type { Manicure } from '../types';
 
 interface HeaderProps {
@@ -65,7 +65,7 @@ export function Header({ mode, onModeChange, manicure, global = false, login = f
       {showSeasonalWarning && (
         <div className="bg-[#FFFDE7] border border-[#FACC15] rounded-2xl p-3.5 text-xs text-gray-800 leading-relaxed shadow-2xs">
           <span className="font-extrabold text-gray-900">Atenção — regra de sinal:</span>{' '}
-          {SEASONAL_WARNING_MESSAGE}
+          {mode === 'client' ? CLIENT_DEPOSIT_SEASONAL_MESSAGE : SEASONAL_WARNING_MESSAGE}
         </div>
       )}
     </header>

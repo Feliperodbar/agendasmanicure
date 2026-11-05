@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, listAgendamentosInRange, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots, BusinessHoursMap } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor, getDepositPercentageForDate } from './src/utils/rules.js';
@@ -70,6 +70,22 @@ function adminManicureId(req: Request): string | null {
 function isInAdminScope(req: Request, manicureId?: string | null): boolean {
   const scope = adminManicureId(req);
   return !scope || manicureId === scope;
+}
+
+async function getAdminAgendamentosInRange(
+  req: Request,
+  startISO: string,
+  endISO: string,
+): Promise<Agendamento[]> {
+  const currentBookings = await listAgendamentosInRange(startISO, endISO, adminManicureId(req));
+  if (currentBookings) return currentBookings;
+
+  return Array.from(memoryDb.agendamentos.values())
+    .filter((booking) =>
+      isInAdminScope(req, booking.manicure_id) &&
+      new Date(booking.data_hora_inicio) >= new Date(startISO) &&
+      new Date(booking.data_hora_inicio) < new Date(endISO)
+    );
 }
 
 function requireOwner(req: Request, res: Response): boolean {
@@ -766,56 +782,90 @@ app.post('/api/admin/trocar-pin', requireAdmin, (req, res) => {
 });
 
 // Status Mensal do Calendário (Regra de Cores Estrita: Verde vs Laranja vs Sem Cor)
-app.get('/api/admin/mes-status', requireAdmin, (req, res) => {
+app.get('/api/admin/mes-status', requireAdmin, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const { ano, mes } = req.query as { ano?: string; mes?: string };
   const year = Number(ano) || new Date().getFullYear();
   const month = Number(mes) || new Date().getMonth() + 1;
 
-  const prefix = `${year}-${String(month).padStart(2, '0')}`;
-  const dayBookingsMap: Record<number, { status: string; sinal_confirmado?: boolean }[]> = {};
+  const monthStartDate = `${year}-${String(month).padStart(2, '0')}-01`;
+  const nextMonthStartDate = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
+  const monthStartISO = toSaoPauloISO(monthStartDate, '00:00');
+  const nextMonthStartISO = toSaoPauloISO(nextMonthStartDate, '00:00');
 
-  Array.from(memoryDb.agendamentos.values()).forEach((a) => {
-    if (isInAdminScope(req, a.manicure_id) && a.data_hora_inicio.startsWith(prefix)) {
-      const day = parseInt(a.data_hora_inicio.split('T')[0].split('-')[2], 10);
+  try {
+    const bookings = await getAdminAgendamentosInRange(req, monthStartISO, nextMonthStartISO);
+    const dayBookingsMap: Record<number, { status: string; sinal_confirmado?: boolean }[]> = {};
+
+    bookings.forEach((booking) => {
+      const day = Number(new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Sao_Paulo',
+        day: '2-digit',
+      }).format(new Date(booking.data_hora_inicio)));
       if (!dayBookingsMap[day]) dayBookingsMap[day] = [];
-      dayBookingsMap[day].push({ status: a.status, sinal_confirmado: a.sinal_confirmado });
+      dayBookingsMap[day].push({ status: booking.status, sinal_confirmado: booking.sinal_confirmado });
+    });
+
+    const dayStatus: Record<number, { color: 'green' | 'orange' | null; total: number; pendentes: number }> = {};
+    for (const [dayStr, dayBookings] of Object.entries(dayBookingsMap)) {
+      const day = Number(dayStr);
+      const colorResult = computeDayCalendarColor(dayBookings);
+      dayStatus[day] = {
+        color: colorResult.color,
+        total: colorResult.totalActive,
+        pendentes: colorResult.totalPending,
+      };
     }
-  });
 
-  const dayStatus: Record<number, { color: 'green' | 'orange' | null; total: number; pendentes: number }> = {};
-  for (const [dayStr, bookings] of Object.entries(dayBookingsMap)) {
-    const day = Number(dayStr);
-    const colorResult = computeDayCalendarColor(bookings);
-    dayStatus[day] = {
-      color: colorResult.color,
-      total: colorResult.totalActive,
-      pendentes: colorResult.totalPending,
-    };
+    res.json({ dayStatus });
+  } catch (error) {
+    console.error('Falha ao carregar status mensal dos agendamentos:', error);
+    res.status(502).json({ error: 'Não foi possível carregar o status atualizado dos agendamentos.' });
   }
-
-  res.json({ dayStatus });
 });
 
 // Lista de Agendamentos do Dia
-app.get('/api/admin/dia-agendamentos', requireAdmin, (req, res) => {
+app.get('/api/admin/dia-agendamentos', requireAdmin, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const { data } = req.query as { data?: string };
   if (!data) return res.status(400).json({ error: 'Data é obrigatória.' });
 
-  const agendamentos = Array.from(memoryDb.agendamentos.values())
-    .filter((a) => isInAdminScope(req, a.manicure_id) && a.data_hora_inicio.startsWith(data))
-    .sort((a, b) => new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime())
-    .map((a) => {
-      const cliente = memoryDb.clientes.get(a.cliente_id);
-      const servico = memoryDb.servicos.get(a.servico_id);
-      return {
-        ...a,
-        cliente_nome: cliente?.nome || 'Cliente',
-        cliente_whatsapp: cliente?.whatsapp || '',
-        servico_nome: servico?.nome || 'Serviço',
-      };
-    });
+  const dateParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data);
+  if (!dateParts) return res.status(400).json({ error: 'Data inválida.' });
+  const [year, month, day] = dateParts.slice(1).map(Number);
+  const requestedDate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    requestedDate.getUTCFullYear() !== year ||
+    requestedDate.getUTCMonth() !== month - 1 ||
+    requestedDate.getUTCDate() !== day
+  ) {
+    return res.status(400).json({ error: 'Data inválida.' });
+  }
 
-  res.json({ agendamentos });
+  const nextDate = new Date(requestedDate.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const startISO = toSaoPauloISO(data, '00:00');
+  const endISO = toSaoPauloISO(nextDate, '00:00');
+
+  try {
+    const bookings = await getAdminAgendamentosInRange(req, startISO, endISO);
+    const agendamentos = bookings
+      .sort((a, b) => new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime())
+      .map((booking) => {
+        const cliente = memoryDb.clientes.get(booking.cliente_id);
+        const servico = memoryDb.servicos.get(booking.servico_id);
+        return {
+          ...booking,
+          cliente_nome: cliente?.nome || 'Cliente',
+          cliente_whatsapp: cliente?.whatsapp || '',
+          servico_nome: servico?.nome || 'Serviço',
+        };
+      });
+
+    res.json({ agendamentos });
+  } catch (error) {
+    console.error('Falha ao carregar agendamentos do dia:', error);
+    res.status(502).json({ error: 'Não foi possível carregar os agendamentos atualizados.' });
+  }
 });
 
 // Atualizar Status (Confirmar Sinal, Concluir, Marcar Falta, Cancelar)
@@ -823,27 +873,27 @@ app.patch('/api/admin/agendamentos/:id/status', requireAdmin, async (req, res) =
   const { id } = req.params;
   const { status, sinal_confirmado } = req.body;
 
-  const ag = memoryDb.agendamentos.get(id);
-  if (!ag) return res.status(404).json({ error: 'Agendamento não encontrado.' });
-  if (!isInAdminScope(req, ag.manicure_id)) return res.status(403).json({ error: 'Agendamento fora do seu perfil.' });
-
   const allowedStatuses: Agendamento['status'][] = ['pendente', 'confirmado', 'concluido', 'cancelado', 'falta'];
   if (status !== undefined && !allowedStatuses.includes(status)) {
     return res.status(400).json({ error: 'Status inválido.' });
   }
 
-  const updatedAgendamento: Agendamento = {
-    ...ag,
-    status: status ?? ag.status,
-    sinal_confirmado: status === 'confirmado'
-      ? true
-      : typeof sinal_confirmado === 'boolean'
-        ? sinal_confirmado
-        : ag.sinal_confirmado,
-    atualizado_em: new Date().toISOString(),
-  };
-
   try {
+    const ag = await getAgendamentoById(id);
+    if (!ag) return res.status(404).json({ error: 'Agendamento não encontrado.' });
+    if (!isInAdminScope(req, ag.manicure_id)) return res.status(403).json({ error: 'Agendamento fora do seu perfil.' });
+
+    const updatedAgendamento: Agendamento = {
+      ...ag,
+      status: status ?? ag.status,
+      sinal_confirmado: status === 'confirmado'
+        ? true
+        : typeof sinal_confirmado === 'boolean'
+          ? sinal_confirmado
+          : ag.sinal_confirmado,
+      atualizado_em: new Date().toISOString(),
+    };
+
     await persistAgendamentoOrThrow(updatedAgendamento);
     memoryDb.agendamentos.set(id, updatedAgendamento);
     res.json({ success: true, agendamento: updatedAgendamento });
