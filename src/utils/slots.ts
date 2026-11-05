@@ -1,4 +1,4 @@
-import { getNowInSaoPaulo, toSaoPauloISO } from './timezone.js';
+import { toSaoPauloISO } from './timezone.js';
 
 export interface BusinessDayHours {
   inicio: string; // "09:00"
@@ -55,7 +55,7 @@ export function calculateAvailableSlots(params: {
     bufferMinutes = 10,
     existingBookings = [],
     blocks = [],
-    nowReference = getNowInSaoPaulo(),
+    nowReference = new Date(),
   } = params;
 
   let normalizedBusinessHours: BusinessHoursMap = DEFAULT_BUSINESS_HOURS;

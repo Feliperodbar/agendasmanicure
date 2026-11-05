@@ -102,3 +102,16 @@ test('reserva Pix vencida libera o horário mesmo antes da rotina de expiração
 
   assert.ok(slots.some((slot) => slot.time === '10:00'));
 });
+
+test('não oferece horários do dia que já passaram segundo o instante atual', () => {
+  const slots = calculateAvailableSlots({
+    dateStr: '2026-11-09',
+    serviceDurationMinutes: 60,
+    nowReference: new Date('2026-11-09T10:01:00-03:00'),
+  });
+  const slotTimes = slots.map((slot) => slot.time);
+
+  assert.equal(slotTimes.includes('09:00'), false);
+  assert.equal(slotTimes.includes('10:00'), false);
+  assert.ok(slotTimes.includes('10:30'));
+});

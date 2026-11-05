@@ -119,6 +119,21 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
   }, [bookingResult?.expiresAt, bookingResult?.sinalPct, selectedService?.id, date, manicureSlug]);
 
   useEffect(() => {
+    if (!date || slots.length === 0) return;
+
+    const hidePastSlots = () => {
+      const now = Date.now();
+      setSlots((currentSlots) => currentSlots.filter(
+        (slot) => Date.parse(toSaoPauloISO(date, slot.time)) > now,
+      ));
+    };
+
+    hidePastSlots();
+    const intervalId = setInterval(hidePastSlots, 30_000);
+    return () => clearInterval(intervalId);
+  }, [date, slots.length]);
+
+  useEffect(() => {
     if (
       !bookingResult ||
       bookingResult.sinalPct === 0 ||
@@ -253,7 +268,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
     }
 
     const startISO = toSaoPauloISO(date, selectedSlot);
-    if (new Date(startISO) <= getNowInSaoPaulo()) {
+    if (new Date(startISO).getTime() <= Date.now()) {
       setErrorMsg('O horário selecionado já passou. Por favor, escolha um horário futuro.');
       return;
     }

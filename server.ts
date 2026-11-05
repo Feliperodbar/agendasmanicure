@@ -360,7 +360,7 @@ app.post('/api/agendamentos', async (req, res) => {
   const startISO = toSaoPauloISO(data, horario);
 
   // VALIDAÇÃO DE DATA E HORÁRIO PASSADOS
-  if (new Date(startISO) <= getNowInSaoPaulo()) {
+  if (new Date(startISO) <= new Date()) {
     return res.status(400).json({
       error: 'Não é possível agendar em uma data ou horário que já passou.',
     });
