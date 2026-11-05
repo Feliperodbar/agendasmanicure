@@ -286,7 +286,12 @@ async function supabaseUpsert(table: string, value: Persistable): Promise<void> 
 }
 
 export async function persistAgendamentoOrThrow(value: Agendamento): Promise<void> {
-  if (!supabaseClient) return;
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    return;
+  }
   const { error } = await supabaseClient.from('agendamentos').upsert(value);
   if (error) {
     throw new Error(`Supabase agendamentos upsert failed: ${error.message}`);
