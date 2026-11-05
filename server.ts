@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistServicoOrThrow, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots, BusinessHoursMap } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor, getDepositPercentageForDate } from './src/utils/rules.js';
@@ -1169,13 +1169,20 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, async (req, res) => {
 });
 
 // CRUD Serviços (Admin)
-app.post('/api/admin/servicos', requireAdmin, (req, res) => {
+app.get('/api/admin/servicos', requireAdmin, (req, res) => {
+  const servicos = Array.from(memoryDb.servicos.values())
+    .filter((servico) => isInAdminScope(req, servico.manicure_id))
+    .sort((a, b) => a.ordem - b.ordem);
+  res.json(servicos);
+});
+
+app.post('/api/admin/servicos', requireAdmin, async (req, res) => {
   const { nome, preco, duracao_minutos, descricao } = req.body;
   if (!nome || !preco || !duracao_minutos) {
     return res.status(400).json({ error: 'Nome, preço e duração são obrigatórios.' });
   }
 
-  const id = `srv-${Date.now()}`;
+  const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const servico: Servico = {
     id,
@@ -1189,12 +1196,17 @@ app.post('/api/admin/servicos', requireAdmin, (req, res) => {
     atualizado_em: now,
     manicure_id: adminManicureId(req),
   };
-  memoryDb.servicos.set(id, servico);
-  void persistServico(servico);
-  res.status(201).json({ success: true, servico });
+  try {
+    await persistServicoOrThrow(servico);
+    memoryDb.servicos.set(id, servico);
+    res.status(201).json({ success: true, servico });
+  } catch (error) {
+    console.error('Falha ao criar serviço:', error);
+    res.status(500).json({ error: 'Não foi possível salvar o serviço.' });
+  }
 });
 
-app.put('/api/admin/servicos/:id', requireAdmin, (req, res) => {
+app.put('/api/admin/servicos/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { nome, preco, duracao_minutos, descricao } = req.body;
   const servico = memoryDb.servicos.get(id);
@@ -1202,27 +1214,39 @@ app.put('/api/admin/servicos/:id', requireAdmin, (req, res) => {
   if (!servico) return res.status(404).json({ error: 'Serviço não encontrado.' });
   if (!isInAdminScope(req, servico.manicure_id)) return res.status(403).json({ error: 'Serviço fora do seu perfil.' });
 
-  if (nome) servico.nome = nome.trim();
-  if (preco !== undefined) servico.preco = Number(preco);
-  if (duracao_minutos !== undefined) servico.duracao_minutos = Number(duracao_minutos);
-  if (descricao !== undefined) servico.descricao = descricao.trim();
-  servico.atualizado_em = new Date().toISOString();
-  void persistServico(servico);
+  const updatedServico = { ...servico };
+  if (nome) updatedServico.nome = nome.trim();
+  if (preco !== undefined) updatedServico.preco = Number(preco);
+  if (duracao_minutos !== undefined) updatedServico.duracao_minutos = Number(duracao_minutos);
+  if (descricao !== undefined) updatedServico.descricao = descricao.trim();
+  updatedServico.atualizado_em = new Date().toISOString();
 
-  res.json({ success: true, servico });
+  try {
+    await persistServicoOrThrow(updatedServico);
+    memoryDb.servicos.set(id, updatedServico);
+    res.json({ success: true, servico: updatedServico });
+  } catch (error) {
+    console.error('Falha ao atualizar serviço:', error);
+    res.status(500).json({ error: 'Não foi possível salvar o serviço.' });
+  }
 });
 
-app.delete('/api/admin/servicos/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/servicos/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const servico = memoryDb.servicos.get(id);
   if (!servico) return res.status(404).json({ error: 'Serviço não encontrado.' });
   if (!isInAdminScope(req, servico.manicure_id)) return res.status(403).json({ error: 'Serviço fora do seu perfil.' });
 
   // Inativa o serviço
-  servico.ativo = false;
-  servico.atualizado_em = new Date().toISOString();
-  void persistServico(servico);
-  res.json({ success: true });
+  const updatedServico = { ...servico, ativo: false, atualizado_em: new Date().toISOString() };
+  try {
+    await persistServicoOrThrow(updatedServico);
+    memoryDb.servicos.set(id, updatedServico);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Falha ao inativar serviço:', error);
+    res.status(500).json({ error: 'Não foi possível excluir o serviço.' });
+  }
 });
 
 // CRUD Bloqueios

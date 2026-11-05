@@ -21,7 +21,8 @@ export function AdminServicosView() {
 
   const loadServices = async () => {
     try {
-      const res = await fetch('/api/servicos');
+      const res = await fetch('/api/admin/servicos');
+      if (!res.ok) throw new Error('Erro ao carregar serviços.');
       const data = await res.json();
       setServices(data || []);
     } catch {
@@ -75,9 +76,10 @@ export function AdminServicosView() {
       if (res.ok) {
         setFeedback({ text: editingService ? 'Serviço atualizado!' : 'Novo serviço adicionado!', type: 'success' });
         setModalOpen(false);
-        loadServices();
+        await loadServices();
       } else {
-        setFeedback({ text: 'Erro ao salvar serviço.', type: 'error' });
+        const data = await res.json().catch(() => null);
+        setFeedback({ text: data?.error || 'Erro ao salvar serviço.', type: 'error' });
       }
     } catch {
       setFeedback({ text: 'Falha de conexão.', type: 'error' });
@@ -92,9 +94,10 @@ export function AdminServicosView() {
       });
       if (res.ok) {
         setFeedback({ text: 'Serviço excluído do catálogo.', type: 'success' });
-        loadServices();
+        await loadServices();
       } else {
-        setFeedback({ text: 'Erro ao excluir serviço.', type: 'error' });
+        const data = await res.json().catch(() => null);
+        setFeedback({ text: data?.error || 'Erro ao excluir serviço.', type: 'error' });
       }
     } catch {
       setFeedback({ text: 'Erro ao conectar.', type: 'error' });

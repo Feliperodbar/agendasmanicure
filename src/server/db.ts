@@ -576,6 +576,19 @@ export async function hydrateSupabaseData(): Promise<void> {
 }
 
 export const persistServico = (value: Servico) => supabaseUpsert('servicos', value);
+export async function persistServicoOrThrow(value: Servico): Promise<void> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    return;
+  }
+  const { error } = await supabaseClient.from('servicos').upsert(value);
+  if (error) {
+    console.error('Supabase servicos upsert failed:', error);
+    throw new Error(`Não foi possível salvar o serviço no Supabase: ${error.message}`);
+  }
+}
 export const persistCliente = (value: Cliente) => supabaseUpsert('clientes', value);
 export const persistAgendamento = (value: Agendamento) => supabaseUpsert('agendamentos', value);
 export const persistBloqueio = (value: Bloqueio) => supabaseUpsert('bloqueios', value);
