@@ -218,15 +218,17 @@ export const memoryDb = new MemoryDatabase();
 
 // Criação do Supabase Server Client caso as variáveis de ambiente existam
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
 
 function createSupabaseServerClient(): SupabaseClient | null {
-  if (!supabaseUrl || !supabaseServiceKey || supabaseUrl === 'MY_SUPABASE_URL') {
+  const normalizedUrl = supabaseUrl?.trim();
+  const normalizedKey = supabaseServiceKey?.trim();
+  if (!normalizedUrl || !normalizedKey || normalizedUrl === 'MY_SUPABASE_URL') {
     return null;
   }
 
   try {
-    return createClient(supabaseUrl.trim(), supabaseServiceKey.trim(), {
+    return createClient(normalizedUrl, normalizedKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
   } catch (error) {
