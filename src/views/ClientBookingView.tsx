@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { PhoneInput } from '../components/PhoneInput';
 import { Header } from '../components/Header';
 import { getNowInSaoPaulo, toSaoPauloISO } from '../utils/timezone';
@@ -54,6 +54,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange }: Clie
   const [waitlistPeriod, setWaitlistPeriod] = useState<'manha' | 'tarde' | 'qualquer'>('qualquer');
   const [waitlistSuccess, setWaitlistSuccess] = useState(false);
   const [copiedPix, setCopiedPix] = useState(false);
+  const datePickerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch('/api/servicos')
@@ -116,6 +117,16 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange }: Clie
   const getTodayString = () => {
     const now = getNowInSaoPaulo();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  };
+
+  const openDatePicker = () => {
+    const picker = datePickerRef.current;
+    if (!picker) return;
+    if (typeof picker.showPicker === 'function') {
+      picker.showPicker();
+    } else {
+      picker.click();
+    }
   };
 
   const handleConfirmBooking = async () => {
@@ -280,22 +291,24 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange }: Clie
             <label htmlFor="data-agendamento" className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
               Escolha a data:
             </label>
-            <div className="relative">
+            <div>
+              <button
+                type="button"
+                onClick={openDatePicker}
+                className="w-full h-12 px-3.5 text-left rounded-2xl border border-pink-200 bg-white text-base font-semibold text-gray-900 outline-none focus:border-[#802334] focus:ring-2 focus:ring-[#F7C4D0]/50"
+                aria-label="Abrir seletor de data"
+              >
+                {formatDateForDisplay(date)}
+              </button>
               <input
                 id="data-agendamento"
-                type="text"
-                value={formatDateForDisplay(date)}
-                readOnly
-                aria-label="Data do agendamento no formato dia, mês e ano"
-                className="w-full h-12 px-3.5 rounded-2xl border border-pink-200 bg-white text-base font-semibold text-gray-900 outline-none focus-within:border-[#802334] focus-within:ring-2 focus-within:ring-[#F7C4D0]/50"
-              />
-              <input
                 type="date"
+                ref={datePickerRef}
                 value={date}
                 min={getTodayString()}
                 onChange={(e) => handleDateChange(e.target.value)}
                 aria-label="Selecionar data do agendamento"
-                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                className="sr-only"
               />
             </div>
           </div>
