@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, persistAdminAuth, persistSessao, deleteSessao, deleteSessionByToken, deleteAllSessoes, persistServico, persistCliente, persistAgendamento, persistBloqueio, persistListaEspera, persistNotificacao, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, persistAdminAuth, persistSessao, deleteSessao, deleteSessionByToken, deleteAllSessoes, persistServico, persistCliente, persistAgendamento, persistBloqueio, persistListaEspera, persistNotificacao, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor } from './src/utils/rules.js';
@@ -122,7 +122,7 @@ app.get('/api/disponibilidade', (req, res) => {
 });
 
 // Criar Agendamento (3º Passo) com Anti-Double-Booking e snapshots
-app.post('/api/agendamentos', (req, res) => {
+app.post('/api/agendamentos', async (req, res) => {
   const { servicoId, data, horario, nomeCliente, whatsappCliente } = req.body;
 
   // Validação de Celular Brasileiro
@@ -187,7 +187,7 @@ app.post('/api/agendamentos', (req, res) => {
     cliente.atualizado_em = now;
   } else {
     cliente = {
-      id: `cli-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: crypto.randomUUID(),
       nome,
       whatsapp: phoneVal.clean,
       criado_em: now,
@@ -195,14 +195,14 @@ app.post('/api/agendamentos', (req, res) => {
     };
     memoryDb.clientes.set(cliente.id, cliente);
   }
-  void persistCliente(cliente);
+  await persistCliente(cliente);
 
   // Gera código sequencial NM-0001
   memoryDb.seqCounter += 1;
   const codigo = `NM-${String(memoryDb.seqCounter).padStart(4, '0')}`;
   const valorSinal = calculateDeposit(servico.preco, sinalPct);
 
-  const agendamentoId = `ag-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const agendamentoId = crypto.randomUUID();
   const novoAgendamento: Agendamento = {
     id: agendamentoId,
     codigo,
@@ -220,11 +220,11 @@ app.post('/api/agendamentos', (req, res) => {
     atualizado_em: now,
   };
   memoryDb.agendamentos.set(agendamentoId, novoAgendamento);
-  void persistAgendamento(novoAgendamento);
+  await persistAgendamento(novoAgendamento);
 
   // Registra notificações simuladas
-  memoryDb.notificacoes.set(`notif-${Date.now()}-1`, {
-    id: `notif-${Date.now()}-1`,
+  const confirmationNotification: Notificacao = {
+    id: crypto.randomUUID(),
     agendamento_id: agendamentoId,
     tipo: 'confirmacao_solicitada',
     canal: 'whatsapp',
@@ -232,11 +232,12 @@ app.post('/api/agendamentos', (req, res) => {
     status: 'simulado',
     enviado_em: now,
     criado_em: now,
-  });
-  void persistNotificacao(Array.from(memoryDb.notificacoes.values()).at(-1)!);
+  };
+  memoryDb.notificacoes.set(confirmationNotification.id, confirmationNotification);
+  void persistNotificacao(confirmationNotification);
 
-  memoryDb.notificacoes.set(`notif-${Date.now()}-2`, {
-    id: `notif-${Date.now()}-2`,
+  const dayBeforeNotification: Notificacao = {
+    id: crypto.randomUUID(),
     agendamento_id: agendamentoId,
     tipo: 'lembrete_24h',
     canal: 'whatsapp',
@@ -244,11 +245,12 @@ app.post('/api/agendamentos', (req, res) => {
     status: 'simulado',
     enviado_em: null,
     criado_em: now,
-  });
-  void persistNotificacao(Array.from(memoryDb.notificacoes.values()).at(-1)!);
+  };
+  memoryDb.notificacoes.set(dayBeforeNotification.id, dayBeforeNotification);
+  void persistNotificacao(dayBeforeNotification);
 
-  memoryDb.notificacoes.set(`notif-${Date.now()}-3`, {
-    id: `notif-${Date.now()}-3`,
+  const twoHoursNotification: Notificacao = {
+    id: crypto.randomUUID(),
     agendamento_id: agendamentoId,
     tipo: 'lembrete_2h',
     canal: 'whatsapp',
@@ -256,8 +258,9 @@ app.post('/api/agendamentos', (req, res) => {
     status: 'simulado',
     enviado_em: null,
     criado_em: now,
-  });
-  void persistNotificacao(Array.from(memoryDb.notificacoes.values()).at(-1)!);
+  };
+  memoryDb.notificacoes.set(twoHoursNotification.id, twoHoursNotification);
+  void persistNotificacao(twoHoursNotification);
 
   res.status(201).json({
     success: true,
@@ -678,7 +681,7 @@ app.delete('/api/admin/agendamentos/:id', requireAdmin, (req, res) => {
 });
 
 // Agendamento Manual pela Manicure
-app.post('/api/admin/agendamentos/manual', requireAdmin, (req, res) => {
+app.post('/api/admin/agendamentos/manual', requireAdmin, async (req, res) => {
   const { servicoId, data, horario, nomeCliente, whatsappCliente, status, observacoes } = req.body;
 
   const phoneVal = validateWhatsApp(whatsappCliente || '');
@@ -694,7 +697,7 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, (req, res) => {
 
   if (!cliente) {
     cliente = {
-      id: `cli-${Date.now()}`,
+      id: crypto.randomUUID(),
       nome: (nomeCliente || 'Cliente').trim(),
       whatsapp: phoneVal.clean,
       criado_em: now,
@@ -702,7 +705,7 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, (req, res) => {
     };
     memoryDb.clientes.set(cliente.id, cliente);
   }
-  void persistCliente(cliente);
+  await persistCliente(cliente);
 
   memoryDb.seqCounter += 1;
   const codigo = `NM-${String(memoryDb.seqCounter).padStart(4, '0')}`;
@@ -713,7 +716,7 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, (req, res) => {
   const fimMinTotal = h * 60 + m + servico.duracao_minutos;
   const endISO = toSaoPauloISO(data, `${String(Math.floor(fimMinTotal / 60)).padStart(2, '0')}:${String(fimMinTotal % 60).padStart(2, '0')}`);
 
-  const id = `ag-${Date.now()}`;
+  const id = crypto.randomUUID();
   const ag: Agendamento = {
     id,
     codigo,
@@ -732,7 +735,7 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, (req, res) => {
     atualizado_em: now,
   };
   memoryDb.agendamentos.set(id, ag);
-  void persistAgendamento(ag);
+  await persistAgendamento(ag);
 
   res.status(201).json({ success: true, agendamento: ag });
 });
