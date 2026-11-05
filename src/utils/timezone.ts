@@ -35,7 +35,7 @@ export function isSeasonalPeriod(referenceDate?: Date): boolean {
 }
 
 export const SEASONAL_WARNING_MESSAGE =
-  'Em novembro, não é cobrado sinal de 50%. Para dezembro, permanece o sinal de 50%. Em caso de falta ou cancelamento com menos de 24 horas, o pagamento antecipado não será estornado.';
+  'Em dezembro será cobrado um sinal de 50% dos serviços agendados para confirmação do agendamento, falta ou desistência com menos de 24hrs não haverá estorno do sinal!';
 
 export const CLIENT_DEPOSIT_SEASONAL_MESSAGE =
-  'Em novembro, você não paga sinal. Para agendamentos em dezembro, você paga sinal antecipado de 50% do valor do serviço.';
+  'Em dezembro será cobrado um sinal de 50% dos serviços agendados para confirmação do agendamento, falta ou desistência com menos de 24hrs não haverá estorno do sinal!';

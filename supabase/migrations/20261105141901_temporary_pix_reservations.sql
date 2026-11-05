@@ -1,3 +1,4 @@
+-- Atomic Pix booking holds with a 20-minute expiry and database-backed cleanup.
 ALTER TABLE public.agendamentos
   ADD COLUMN IF NOT EXISTS pagamento_status TEXT NOT NULL DEFAULT 'nao_requerido',
   ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ,
