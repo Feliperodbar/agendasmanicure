@@ -8,6 +8,7 @@ import { AdminAgendaView } from './views/AdminAgendaView';
 import { AdminServicosView } from './views/AdminServicosView';
 import { AdminBloqueiosView } from './views/AdminBloqueiosView';
 import { AdminHorariosView } from './views/AdminHorariosView';
+import { AdminManicuresView } from './views/AdminManicuresView';
 import type { Manicure } from './types';
 
 export default function App() {
@@ -117,6 +118,7 @@ export default function App() {
                 )}
                 {adminTab === 'servicos' && <AdminServicosView />}
                 {adminTab === 'bloqueios' && <AdminBloqueiosView />}
+                {adminTab === 'manicures' && <AdminManicuresView onLogout={handleAdminLogout} />}
                 {adminTab === 'horarios' && <AdminHorariosView onLogout={handleAdminLogout} />}
                 {adminTab === 'regras' && <RulesView />}
               </div>

@@ -1,8 +1,8 @@
 import React from 'react';
-import { Calendar, ListFilter, FileText, Scissors, ShieldAlert, Sliders } from 'lucide-react';
+import { Calendar, ListFilter, FileText, Scissors, ShieldAlert, Sliders, UsersRound } from 'lucide-react';
 
 export type ClientTab = 'agendar' | 'meus-horarios' | 'regras';
-export type AdminTab = 'agenda' | 'servicos' | 'bloqueios' | 'horarios' | 'regras';
+export type AdminTab = 'agenda' | 'servicos' | 'bloqueios' | 'manicures' | 'horarios' | 'regras';
 
 interface BottomNavProps {
   mode: 'client' | 'admin';
@@ -24,6 +24,7 @@ export function BottomNav({
       { id: 'agenda', label: 'Agenda', icon: Calendar },
       { id: 'servicos', label: 'Serviços', icon: Scissors },
       { id: 'bloqueios', label: 'Bloqueios', icon: ShieldAlert },
+      { id: 'manicures', label: 'Manicures', icon: UsersRound },
       { id: 'horarios', label: 'Horários', icon: Sliders },
       { id: 'regras', label: 'Regras', icon: FileText },
     ];
