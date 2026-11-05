@@ -1,13 +1,16 @@
 import React from 'react';
 import { ExternalLink, Instagram } from 'lucide-react';
 import { isSeasonalPeriod, SEASONAL_WARNING_MESSAGE } from '../utils/timezone';
+import type { Manicure } from '../types';
 
 interface HeaderProps {
   mode: 'client' | 'admin';
   onModeChange: (mode: 'client' | 'admin') => void;
+  manicure?: Manicure | null;
+  onBackToHome?: () => void;
 }
 
-export function Header({ mode, onModeChange }: HeaderProps) {
+export function Header({ mode, onModeChange, manicure, onBackToHome }: HeaderProps) {
   const showSeasonalWarning = isSeasonalPeriod();
 
   return (
@@ -15,25 +18,34 @@ export function Header({ mode, onModeChange }: HeaderProps) {
       {/* Top Title Bar: Avatar circular rosa à esquerda + título & @nataliamarcelanail */}
       <div className="flex items-center gap-3">
         {/* N Avatar Circle à esquerda */}
-        <div className="w-11 h-11 rounded-full bg-[#F7C4D0] text-[#1a1012] font-heading font-extrabold text-lg flex items-center justify-center shrink-0 shadow-2xs">
-          N
-        </div>
+        {manicure?.photo_url ? (
+          <img src={manicure.photo_url} alt="" className="w-11 h-11 rounded-full object-cover shrink-0 shadow-2xs" />
+        ) : (
+          <div className="w-11 h-11 rounded-full bg-[#F7C4D0] text-[#1a1012] font-heading font-extrabold text-lg flex items-center justify-center shrink-0 shadow-2xs">
+            {(manicure?.name || 'Natália Marcela').charAt(0)}
+          </div>
+        )}
 
         <div>
           <h1 className="font-heading font-extrabold text-[21px] leading-tight text-[#1a1012] tracking-tight">
-            Natália Marcela | Nail designer
+            {manicure?.name || 'Natália Marcela'} | Nail designer
           </h1>
           <div className="flex items-center gap-3 mt-1.5">
             <a
-              href="https://instagram.com/nataliamarcelanail"
+              href={`https://instagram.com/${(manicure?.instagram || 'nataliamarcelanail').replace(/^@/, '')}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-semibold text-[#802334] underline hover:text-[#5c1724] inline-flex items-center gap-0.5"
             >
               <Instagram size={13} aria-hidden="true" />
-              @nataliamarcelanail
+              @{(manicure?.instagram || 'nataliamarcelanail').replace(/^@/, '')}
               <ExternalLink size={11} className="inline ml-0.5" />
             </a>
+            {onBackToHome && (
+              <button type="button" onClick={onBackToHome} className="text-sm font-semibold text-[#802334] underline">
+                Trocar manicure
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onModeChange('admin')}

@@ -9,6 +9,7 @@ import { AdminServicosView } from './views/AdminServicosView';
 import { AdminBloqueiosView } from './views/AdminBloqueiosView';
 import { AdminHorariosView } from './views/AdminHorariosView';
 import { AdminManicuresView } from './views/AdminManicuresView';
+import { HomeView } from './views/HomeView';
 import type { Manicure } from './types';
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
   const [adminTab, setAdminTab] = useState<AdminTab>('agenda');
   const [manicures, setManicures] = useState<Manicure[]>([]);
   const [selectedManicure, setSelectedManicure] = useState<Manicure | null>(null);
+  const [showHome, setShowHome] = useState(true);
 
   // Ao carregar, verifica se já existe sessão de admin ativa
   useEffect(() => {
@@ -59,42 +61,33 @@ export default function App() {
         {/* LADO DA CLIENTE */}
         {mode === 'client' && (
           <div className="flex-1">
-            {manicures.length > 1 && (
-              <div className="px-4 pt-3">
-                <label htmlFor="manicure-select" className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1.5">
-                  Escolha a manicure
-                </label>
-                <select
-                  id="manicure-select"
-                  value={selectedManicure?.id || ''}
-                  onChange={(event) => {
-                    const profile = manicures.find((item) => item.id === event.target.value);
-                    setSelectedManicure(profile || null);
-                  }}
-                  className="w-full h-11 rounded-xl border border-pink-200 px-3 text-sm font-semibold"
-                >
-                  {manicures.map((profile) => (
-                    <option key={profile.id} value={profile.id}>{profile.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {clientTab === 'agendar' && (
+            {showHome ? (
+              <HomeView
+                manicures={manicures}
+                onSelectManicure={(profile) => {
+                  setSelectedManicure(profile);
+                  setShowHome(false);
+                }}
+                onOpenAdmin={() => setMode('admin')}
+              />
+            ) : clientTab === 'agendar' && (
               <ClientBookingView
                 key={selectedManicure?.id || 'natalia'}
                 onGoToMyBookings={() => setClientTab('meus-horarios')}
                 mode={mode}
                 onModeChange={(m) => setMode(m)}
                 manicureSlug={selectedManicure?.slug || 'natalia'}
+                manicure={selectedManicure}
+                onBackToHome={() => setShowHome(true)}
               />
             )}
-            {clientTab === 'meus-horarios' && (
+            {!showHome && clientTab === 'meus-horarios' && (
               <ClientMyBookingsView
                 mode={mode}
                 onModeChange={(m) => setMode(m)}
               />
             )}
-            {clientTab === 'regras' && <RulesView />}
+            {!showHome && clientTab === 'regras' && <RulesView />}
           </div>
         )}
 

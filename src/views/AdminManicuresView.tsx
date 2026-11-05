@@ -24,6 +24,7 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
   const [slug, setSlug] = useState('');
   const [instagram, setInstagram] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
+  const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -63,7 +64,7 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, slug, instagram, photo_url: photoUrl }),
+        body: JSON.stringify({ name, slug, instagram, photo_url: photoUrl, pin }),
       });
       if (response.status === 401) {
         onLogout?.();
@@ -82,6 +83,7 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
       setSlug('');
       setInstagram('');
       setPhotoUrl('');
+      setPin('');
       setFeedback({ text: 'Manicure cadastrada com sucesso!', type: 'success' });
     } catch (error) {
       setFeedback({ text: error instanceof Error ? error.message : 'Erro ao cadastrar manicure.', type: 'error' });
@@ -127,6 +129,11 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
         <label className="block text-xs font-bold text-gray-700">
           Instagram
           <input value={instagram} onChange={(event) => setInstagram(event.target.value)} className="mt-1 w-full h-11 px-3 rounded-xl border border-gray-200 text-sm" placeholder="Ex.: julianaunhas" />
+        </label>
+        <label className="block text-xs font-bold text-gray-700">
+          PIN de acesso
+          <input required pattern="\d{4}" inputMode="numeric" maxLength={4} type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} className="mt-1 w-full h-11 px-3 rounded-xl border border-gray-200 text-sm" placeholder="4 números" />
+          <span className="block mt-1 text-[11px] text-gray-500">Será usado pela manicure para entrar na agenda.</span>
         </label>
         <label className="block text-xs font-bold text-gray-700">
           URL da foto (opcional)

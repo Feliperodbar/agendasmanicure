@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, persistAdminAuth, persistSessao, deleteSessao, deleteSessionByToken, deleteAllSessoes, persistServico, persistCliente, persistAgendamento, persistBloqueio, persistListaEspera, persistNotificacao, persistManicure, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, deleteSessao, deleteSessionByToken, deleteAllSessoes, persistServico, persistCliente, persistAgendamento, persistBloqueio, persistListaEspera, persistNotificacao, persistManicure, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor } from './src/utils/rules.js';
@@ -111,19 +111,25 @@ app.get('/api/admin/manicures', requireAdmin, (_req, res) => {
 
 app.post('/api/admin/manicures', requireAdmin, async (req, res) => {
   try {
-    const { name, slug, instagram, photo_url } = req.body as {
+    const { name, slug, instagram, photo_url, pin } = req.body as {
       name?: string;
       slug?: string;
       instagram?: string;
       photo_url?: string;
+      pin?: string;
     };
     const normalizedName = String(name || '').trim();
     const normalizedSlug = slugifyManicure(String(slug || normalizedName));
-    if (normalizedName.length < 3 || !normalizedSlug) {
-      return res.status(400).json({ error: 'Nome e slug válidos são obrigatórios.' });
+    if (normalizedName.length < 3 || !normalizedSlug || !/^\d{4}$/.test(pin || '')) {
+      return res.status(400).json({ error: 'Nome, slug e PIN de 4 números são obrigatórios.' });
     }
     if (Array.from(memoryDb.manicures.values()).some((item) => item.slug === normalizedSlug)) {
       return res.status(409).json({ error: 'Este slug já está em uso.' });
+    }
+    const pinHash = hashPin(pin!);
+    const existingAuths = await getSupabaseAdminAuths();
+    if (existingAuths.some((item) => item.pin_hash === pinHash) || memoryDb.adminAuth?.pin_hash === pinHash) {
+      return res.status(409).json({ error: 'Este PIN já está em uso. Escolha outro.' });
     }
 
     const now = new Date().toISOString();
@@ -139,6 +145,15 @@ app.post('/api/admin/manicures', requireAdmin, async (req, res) => {
     };
     await persistManicure(manicure);
     memoryDb.manicures.set(manicure.id, manicure);
+    const auth: AdminAuth = {
+      id: crypto.randomUUID(),
+      pin_hash: pinHash,
+      tentativas_falhas: 0,
+      bloqueado_ate: null,
+      atualizado_em: now,
+      manicure_id: manicure.id,
+    };
+    await persistAdminAuth(auth);
     const defaultServices = Array.from(memoryDb.servicos.values()).filter((service) =>
       !service.manicure_id || service.manicure_id === memoryDb.manicures.get('default-manicure')?.id
     );
@@ -566,10 +581,39 @@ app.post('/api/admin/login', async (req, res) => {
     return res.status(400).json({ error: 'PIN inválido. Digite 4 números.' });
   }
 
-  const persistedAuth = await getSupabaseAdminAuth();
-  if (persistedAuth) {
-    memoryDb.adminAuth = persistedAuth;
+  const persistedAuths = await getSupabaseAdminAuths();
+  const authCandidates = persistedAuths.length > 0
+    ? persistedAuths
+    : memoryDb.adminAuth
+      ? [memoryDb.adminAuth]
+      : [];
+  const inputHash = hashPin(pin);
+  const authenticatedAdmin = authCandidates.find((auth) => auth.pin_hash === inputHash);
+  if (!authenticatedAdmin) {
+    const fallbackAuth = memoryDb.adminAuth || authCandidates[0];
+    if (!fallbackAuth) {
+      return res.status(400).json({ error: 'PIN ainda não configurado. Defina no primeiro acesso.' });
+    }
+    memoryDb.adminAuth = fallbackAuth;
+    const now = new Date();
+    if (fallbackAuth.bloqueado_ate && new Date(fallbackAuth.bloqueado_ate) > now) {
+      const restanteMin = Math.ceil(
+        (new Date(fallbackAuth.bloqueado_ate).getTime() - now.getTime()) / 60000
+      );
+      return res.status(429).json({
+        error: `Muitas tentativas incorretas. Tente novamente em ${restanteMin} minuto(s).`,
+      });
+    }
+    const falhas = (fallbackAuth.tentativas_falhas || 0) + 1;
+    fallbackAuth.tentativas_falhas = falhas >= 5 ? 0 : falhas;
+    fallbackAuth.bloqueado_ate = falhas >= 5 ? new Date(Date.now() + 5 * 60 * 1000).toISOString() : null;
+    void persistAdminAuth(fallbackAuth);
+    if (falhas >= 5) {
+      return res.status(429).json({ error: '5 tentativas erradas. Acesso bloqueado por 5 minutos.' });
+    }
+    return res.status(401).json({ error: `PIN incorreto. Restam ${5 - falhas} tentativa(s).` });
   }
+  memoryDb.adminAuth = authenticatedAdmin;
   if (!memoryDb.adminAuth) {
     return res.status(400).json({ error: 'PIN ainda não configurado. Defina no primeiro acesso.' });
   }
@@ -584,7 +628,6 @@ app.post('/api/admin/login', async (req, res) => {
     });
   }
 
-  const inputHash = hashPin(pin);
   if (inputHash !== memoryDb.adminAuth.pin_hash) {
     const falhas = (memoryDb.adminAuth.tentativas_falhas || 0) + 1;
     let bloqueadoAte: string | null = null;
@@ -620,6 +663,7 @@ app.post('/api/admin/login', async (req, res) => {
     token_hash: tokenHash,
     expira_em: expiraEm,
     criado_em: new Date().toISOString(),
+    manicure_id: memoryDb.adminAuth.manicure_id || null,
   };
   memoryDb.sessoes.set(tokenHash, session);
   await persistSessao(session);

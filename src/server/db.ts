@@ -368,6 +368,12 @@ export async function getSupabaseAdminAuth(): Promise<AdminAuth | null> {
   return !error && data ? (data as AdminAuth) : null;
 }
 
+export async function getSupabaseAdminAuths(): Promise<AdminAuth[]> {
+  if (!supabaseClient) return [];
+  const { data, error } = await supabaseClient.from('admin_auth').select('*');
+  return !error && data ? data as AdminAuth[] : [];
+}
+
 const supabaseConfigKeyMap: Record<string, string> = {
   chave_pix: 'chave_pix',
   buffer_minutos: 'buffer_min',
