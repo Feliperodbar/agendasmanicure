@@ -3,14 +3,21 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, deleteSessao, deleteSessionByToken, deleteAllSessoes, persistServico, persistCliente, persistAgendamento, persistBloqueio, persistListaEspera, persistNotificacao, persistManicure, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistCliente, persistAgendamento, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
-import { calculateAvailableSlots } from './src/utils/slots.js';
+import { calculateAvailableSlots, BusinessHoursMap } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor } from './src/utils/rules.js';
 import { getNowInSaoPaulo, toSaoPauloISO, formatInSaoPaulo } from './src/utils/timezone.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+declare global {
+  namespace Express {
+    interface Request {
+      adminSession?: Sessao;
+    }
+  }
+}
 
 app.use(express.json());
 app.use(cookieParser());
@@ -49,7 +56,25 @@ async function requireAdmin(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ error: 'Sessão expirada. Faça login novamente.' });
   }
 
+  req.adminSession = sessao;
   next();
+}
+
+function adminManicureId(req: Request): string | null {
+  return req.adminSession?.manicure_id || null;
+}
+
+function isInAdminScope(req: Request, manicureId?: string | null): boolean {
+  const scope = adminManicureId(req);
+  return !scope || manicureId === scope;
+}
+
+function requireOwner(req: Request, res: Response): boolean {
+  if (adminManicureId(req)) {
+    res.status(403).json({ error: 'Somente o proprietário pode gerenciar as manicures.' });
+    return false;
+  }
+  return true;
 }
 
 // Checar sessão sem disparar 401
@@ -70,12 +95,18 @@ app.get('/api/admin/session', async (req, res) => {
 
 // Perfis públicos das manicures ativas
 function toPublicManicure(m: Manicure) {
-  return { id: m.id, slug: m.slug, name: m.name, instagram: m.instagram, photo_url: m.photo_url };
+  return { id: m.id, slug: m.slug, name: m.name, instagram: m.instagram, photo_url: m.photo_url, active: m.active };
 }
 
 function resolveManicure(req: Request): Manicure | null {
   const slug = typeof req.query.manicure === 'string' ? req.query.manicure : 'natalia';
   return Array.from(memoryDb.manicures.values()).find((item) => item.active && item.slug === slug) || null;
+}
+
+function configValue(req: Request, chave: string, fallback: unknown): unknown {
+  const manicure = resolveManicure(req);
+  const scoped = manicure ? memoryDb.configuracoes.get(`${manicure.id}:${chave}`) : undefined;
+  return scoped?.valor ?? memoryDb.configuracoes.get(chave)?.valor ?? fallback;
 }
 
 app.get('/api/manicures', (_req, res) => {
@@ -105,12 +136,16 @@ function slugifyManicure(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-app.get('/api/admin/manicures', requireAdmin, (_req, res) => {
-  res.json(Array.from(memoryDb.manicures.values()).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+app.get('/api/admin/manicures', requireAdmin, (req, res) => {
+  const scope = adminManicureId(req);
+  res.json(Array.from(memoryDb.manicures.values())
+    .filter((item) => !scope || item.id === scope)
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
 });
 
 app.post('/api/admin/manicures', requireAdmin, async (req, res) => {
   try {
+    if (!requireOwner(req, res)) return;
     const { name, slug, instagram, photo_url, pin } = req.body as {
       name?: string;
       slug?: string;
@@ -154,6 +189,7 @@ app.post('/api/admin/manicures', requireAdmin, async (req, res) => {
       manicure_id: manicure.id,
     };
     await persistAdminAuth(auth);
+    memoryDb.adminAuths.set(auth.id, auth);
     const defaultServices = Array.from(memoryDb.servicos.values()).filter((service) =>
       !service.manicure_id || service.manicure_id === memoryDb.manicures.get('default-manicure')?.id
     );
@@ -174,6 +210,31 @@ app.post('/api/admin/manicures', requireAdmin, async (req, res) => {
     res.status(500).json({ error: 'Não foi possível cadastrar a manicure. Tente novamente.' });
   }
 });
+
+app.patch('/api/admin/manicures/:id', requireAdmin, async (req, res) => {
+  if (!requireOwner(req, res)) return;
+  const manicure = memoryDb.manicures.get(req.params.id);
+  if (!manicure) return res.status(404).json({ error: 'Manicure não encontrada.' });
+  const { name, slug, instagram, photo_url, active } = req.body as {
+    name?: string; slug?: string; instagram?: string; photo_url?: string; active?: boolean;
+  };
+  const normalizedName = name === undefined ? manicure.name : String(name).trim();
+  const normalizedSlug = slug === undefined ? manicure.slug : slugifyManicure(String(slug));
+  if (normalizedName.length < 3 || !normalizedSlug) {
+    return res.status(400).json({ error: 'Nome e slug válidos são obrigatórios.' });
+  }
+  const duplicate = Array.from(memoryDb.manicures.values())
+    .some((item) => item.id !== manicure.id && item.slug === normalizedSlug);
+  if (duplicate) return res.status(409).json({ error: 'Este slug já está em uso.' });
+  manicure.name = normalizedName;
+  manicure.slug = normalizedSlug;
+  if (instagram !== undefined) manicure.instagram = String(instagram).trim() || null;
+  if (photo_url !== undefined) manicure.photo_url = String(photo_url).trim() || null;
+  if (active !== undefined) manicure.active = Boolean(active);
+  manicure.updated_at = new Date().toISOString();
+  await persistManicure(manicure);
+  res.json(toPublicManicure(manicure));
+});
 // Catálogo de serviços ativos
 app.get('/api/servicos', (req, res) => {
   const manicure = resolveManicure(req);
@@ -186,10 +247,10 @@ app.get('/api/servicos', (req, res) => {
 
 // Configurações públicas (Chave Pix, percentual de sinal, etc.)
 app.get('/api/configuracoes-publicas', (req, res) => {
-  const chavePix = memoryDb.configuracoes.get('chave_pix')?.valor || 'nataliamarcela49@gmail.com';
-  const sinalPct = memoryDb.configuracoes.get('sinal_percentual')?.valor ?? 50;
-  const bufferMin = memoryDb.configuracoes.get('buffer_minutos')?.valor ?? 10;
-  const toleranciaAtraso = memoryDb.configuracoes.get('tolerancia_atraso_minutos')?.valor ?? 10;
+  const chavePix = configValue(req, 'chave_pix', 'nataliamarcela49@gmail.com');
+  const sinalPct = configValue(req, 'sinal_percentual', 50);
+  const bufferMin = configValue(req, 'buffer_minutos', 10);
+  const toleranciaAtraso = configValue(req, 'tolerancia_atraso_minutos', 10);
   res.json({ chavePix, sinalPct, bufferMin, toleranciaAtraso });
 });
 
@@ -209,8 +270,8 @@ app.get('/api/disponibilidade', (req, res) => {
     return res.status(404).json({ error: 'Manicure ou serviço não encontrado.' });
   }
 
-  const hoursConfig = memoryDb.configuracoes.get('horarios_funcionamento')?.valor;
-  const bufferMinutes = Number(memoryDb.configuracoes.get('buffer_minutos')?.valor ?? 10);
+  const hoursConfig = configValue(req, 'horarios_funcionamento', undefined);
+  const bufferMinutes = Number(configValue(req, 'buffer_minutos', 10));
 
   // Filtrar agendamentos e bloqueios da data
   const dayBookings = Array.from(memoryDb.agendamentos.values()).filter((a) =>
@@ -225,7 +286,7 @@ app.get('/api/disponibilidade', (req, res) => {
   const slots = calculateAvailableSlots({
     dateStr: data,
     serviceDurationMinutes: servico.duracao_minutos,
-    businessHours: hoursConfig,
+    businessHours: hoursConfig as string | BusinessHoursMap | undefined,
     bufferMinutes,
     existingBookings: dayBookings,
     blocks: dayBlocks,
@@ -256,9 +317,9 @@ app.post('/api/agendamentos', async (req, res) => {
     return res.status(404).json({ error: 'Serviço selecionado é inválido.' });
   }
 
-  const sinalPct = Number(memoryDb.configuracoes.get('sinal_percentual')?.valor ?? 50);
-  const bufferMin = Number(memoryDb.configuracoes.get('buffer_minutos')?.valor ?? 10);
-  const chavePix = String(memoryDb.configuracoes.get('chave_pix')?.valor || 'nataliamarcela49@gmail.com');
+  const sinalPct = Number(configValue(req, 'sinal_percentual', 50));
+  const bufferMin = Number(configValue(req, 'buffer_minutos', 10));
+  const chavePix = String(configValue(req, 'chave_pix', 'nataliamarcela49@gmail.com'));
 
   const duracao = servico.duracao_minutos;
   const startISO = toSaoPauloISO(data, horario);
@@ -549,6 +610,7 @@ app.post('/api/admin/setup-pin', async (req, res) => {
     atualizado_em: now,
   };
   await persistAdminAuth(memoryDb.adminAuth);
+  memoryDb.adminAuths.set(memoryDb.adminAuth.id, memoryDb.adminAuth);
 
   // Cria sessão e cookie
   const rawToken = crypto.randomBytes(32).toString('hex');
@@ -584,9 +646,7 @@ app.post('/api/admin/login', async (req, res) => {
   const persistedAuths = await getSupabaseAdminAuths();
   const authCandidates = persistedAuths.length > 0
     ? persistedAuths
-    : memoryDb.adminAuth
-      ? [memoryDb.adminAuth]
-      : [];
+    : Array.from(memoryDb.adminAuths.values()).concat(memoryDb.adminAuth ? [memoryDb.adminAuth] : []);
   const inputHash = hashPin(pin);
   const authenticatedAdmin = authCandidates.find((auth) => auth.pin_hash === inputHash);
   if (!authenticatedAdmin) {
@@ -723,7 +783,7 @@ app.get('/api/admin/mes-status', requireAdmin, (req, res) => {
   const dayBookingsMap: Record<number, { status: string; sinal_confirmado?: boolean }[]> = {};
 
   Array.from(memoryDb.agendamentos.values()).forEach((a) => {
-    if (a.data_hora_inicio.startsWith(prefix)) {
+    if (isInAdminScope(req, a.manicure_id) && a.data_hora_inicio.startsWith(prefix)) {
       const day = parseInt(a.data_hora_inicio.split('T')[0].split('-')[2], 10);
       if (!dayBookingsMap[day]) dayBookingsMap[day] = [];
       dayBookingsMap[day].push({ status: a.status, sinal_confirmado: a.sinal_confirmado });
@@ -750,7 +810,7 @@ app.get('/api/admin/dia-agendamentos', requireAdmin, (req, res) => {
   if (!data) return res.status(400).json({ error: 'Data é obrigatória.' });
 
   const agendamentos = Array.from(memoryDb.agendamentos.values())
-    .filter((a) => a.data_hora_inicio.startsWith(data))
+    .filter((a) => isInAdminScope(req, a.manicure_id) && a.data_hora_inicio.startsWith(data))
     .sort((a, b) => new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime())
     .map((a) => {
       const cliente = memoryDb.clientes.get(a.cliente_id);
@@ -773,6 +833,7 @@ app.patch('/api/admin/agendamentos/:id/status', requireAdmin, (req, res) => {
 
   const ag = memoryDb.agendamentos.get(id);
   if (!ag) return res.status(404).json({ error: 'Agendamento não encontrado.' });
+  if (!isInAdminScope(req, ag.manicure_id)) return res.status(403).json({ error: 'Agendamento fora do seu perfil.' });
 
   if (status) ag.status = status;
   if (typeof sinal_confirmado === 'boolean') ag.sinal_confirmado = sinal_confirmado;
@@ -790,6 +851,7 @@ app.post('/api/admin/agendamentos/:id/remarcar', requireAdmin, (req, res) => {
 
   const ag = memoryDb.agendamentos.get(id);
   if (!ag) return res.status(404).json({ error: 'Agendamento não encontrado.' });
+  if (!isInAdminScope(req, ag.manicure_id)) return res.status(403).json({ error: 'Agendamento fora do seu perfil.' });
 
   const startISO = toSaoPauloISO(novaData, novoHorario);
   const [h, m] = novoHorario.split(':').map(Number);
@@ -822,6 +884,8 @@ app.post('/api/admin/agendamentos/:id/remarcar', requireAdmin, (req, res) => {
 // Excluir Agendamento
 app.delete('/api/admin/agendamentos/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
+  const ag = memoryDb.agendamentos.get(id);
+  if (ag && !isInAdminScope(req, ag.manicure_id)) return res.status(403).json({ error: 'Agendamento fora do seu perfil.' });
   const deleted = memoryDb.agendamentos.delete(id);
   if (!deleted) return res.status(404).json({ error: 'Agendamento não encontrado.' });
   void deleteAgendamento(id);
@@ -839,6 +903,7 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, async (req, res) => {
 
   const servico = memoryDb.servicos.get(servicoId);
   if (!servico) return res.status(404).json({ error: 'Serviço inválido.' });
+  if (!isInAdminScope(req, servico.manicure_id)) return res.status(403).json({ error: 'Serviço fora do seu perfil.' });
 
   let cliente = Array.from(memoryDb.clientes.values()).find((c) => c.whatsapp === phoneVal.clean);
   const now = new Date().toISOString();
@@ -879,6 +944,7 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, async (req, res) => {
     sinal_confirmado: status === 'confirmado',
     estorno_elegivel: true,
     observacoes,
+    manicure_id: servico.manicure_id || adminManicureId(req),
     criado_em: now,
     atualizado_em: now,
   };
@@ -907,6 +973,7 @@ app.post('/api/admin/servicos', requireAdmin, (req, res) => {
     ativo: true,
     criado_em: now,
     atualizado_em: now,
+    manicure_id: adminManicureId(req),
   };
   memoryDb.servicos.set(id, servico);
   void persistServico(servico);
@@ -919,6 +986,7 @@ app.put('/api/admin/servicos/:id', requireAdmin, (req, res) => {
   const servico = memoryDb.servicos.get(id);
 
   if (!servico) return res.status(404).json({ error: 'Serviço não encontrado.' });
+  if (!isInAdminScope(req, servico.manicure_id)) return res.status(403).json({ error: 'Serviço fora do seu perfil.' });
 
   if (nome) servico.nome = nome.trim();
   if (preco !== undefined) servico.preco = Number(preco);
@@ -934,6 +1002,7 @@ app.delete('/api/admin/servicos/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
   const servico = memoryDb.servicos.get(id);
   if (!servico) return res.status(404).json({ error: 'Serviço não encontrado.' });
+  if (!isInAdminScope(req, servico.manicure_id)) return res.status(403).json({ error: 'Serviço fora do seu perfil.' });
 
   // Inativa o serviço
   servico.ativo = false;
@@ -944,7 +1013,7 @@ app.delete('/api/admin/servicos/:id', requireAdmin, (req, res) => {
 
 // CRUD Bloqueios
 app.get('/api/admin/bloqueios', requireAdmin, (req, res) => {
-  const bloqueios = Array.from(memoryDb.bloqueios.values());
+  const bloqueios = Array.from(memoryDb.bloqueios.values()).filter((item) => isInAdminScope(req, item.manicure_id));
   res.json({ bloqueios });
 });
 
@@ -961,6 +1030,7 @@ app.post('/api/admin/bloqueios', requireAdmin, (req, res) => {
     motivo: (motivo || 'Compromisso pessoal').trim(),
     dia_inteiro: !!diaInteiro,
     criado_em: now,
+    manicure_id: adminManicureId(req),
   };
   memoryDb.bloqueios.set(id, bloqueio);
   void persistBloqueio(bloqueio);
@@ -969,6 +1039,8 @@ app.post('/api/admin/bloqueios', requireAdmin, (req, res) => {
 
 app.delete('/api/admin/bloqueios/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
+  const bloqueio = memoryDb.bloqueios.get(id);
+  if (bloqueio && !isInAdminScope(req, bloqueio.manicure_id)) return res.status(403).json({ error: 'Bloqueio fora do seu perfil.' });
   memoryDb.bloqueios.delete(id);
   void deleteBloqueio(id);
   res.json({ success: true });
@@ -978,7 +1050,7 @@ app.delete('/api/admin/bloqueios/:id', requireAdmin, (req, res) => {
 app.get('/api/admin/configuracoes', requireAdmin, (req, res) => {
   const configs: Record<string, any> = {};
   memoryDb.configuracoes.forEach((c) => {
-    configs[c.chave] = c.valor;
+    if (isInAdminScope(req, c.manicure_id)) configs[c.chave] = c.valor;
   });
   res.json({ configs });
 });
@@ -991,16 +1063,18 @@ app.post('/api/admin/configuracoes', requireAdmin, async (req, res) => {
 
   const now = new Date().toISOString();
   for (const [chave, valor] of Object.entries(configs)) {
-    memoryDb.configuracoes.set(chave, {
-      id: `cfg-${chave}`,
+    const mapKey = adminManicureId(req) ? `${adminManicureId(req)}:${chave}` : chave;
+    memoryDb.configuracoes.set(mapKey, {
+      id: `cfg-${mapKey}`,
       chave,
       valor,
       atualizado_em: now,
+      manicure_id: adminManicureId(req),
     });
   }
 
   try {
-    await saveSupabaseConfig(configs);
+    await saveSupabaseConfig(configs, adminManicureId(req));
     res.json({ success: true });
   } catch (error) {
     console.error(error);
@@ -1024,7 +1098,7 @@ app.get('/api/admin/export-csv', requireAdmin, (req, res) => {
     'SinalConfirmado',
   ];
 
-  const rows = Array.from(memoryDb.agendamentos.values()).map((a) => {
+  const rows = Array.from(memoryDb.agendamentos.values()).filter((a) => isInAdminScope(req, a.manicure_id)).map((a) => {
     const cliente = memoryDb.clientes.get(a.cliente_id);
     const servico = memoryDb.servicos.get(a.servico_id);
 
@@ -1051,7 +1125,8 @@ app.get('/api/admin/export-csv', requireAdmin, (req, res) => {
 
 // Sincronização Simulada Idempotente com Google Agenda / CRM
 app.post('/api/admin/sync-simulado', requireAdmin, (req, res) => {
-  const activeCount = Array.from(memoryDb.agendamentos.values()).filter((a) => a.status !== 'cancelado').length;
+  const activeCount = Array.from(memoryDb.agendamentos.values())
+    .filter((a) => isInAdminScope(req, a.manicure_id) && a.status !== 'cancelado').length;
   res.json({
     success: true,
     message: `[SIMULAÇÃO] ${activeCount} agendamento(s) sincronizado(s) de forma idempotente com Google Agenda / CRM externo via NM-Code. Nenhuma chamada externa real foi realizada.`,

@@ -105,8 +105,8 @@ Ao adicionar uma rota administrativa nova, criar também um handler explícito e
 
 ## Próximas evoluções recomendadas
 
-- **Isolamento de Tenant:** Garantir o filtro rigoroso por `manicure_id` em 100% das queries de dashboard, configurações, serviços e bloqueios com base no payload da sessão.
-- **Gerenciamento de Perfis:** Implementar fluxos de edição, desativação (soft delete) e reativação de manicures.
+- **Isolamento de Tenant:** Implementado nas sessões administrativas e nas rotas de dashboard, configurações, serviços, bloqueios, exportação e sincronização, usando `manicure_id`.
+- **Gerenciamento de Perfis:** Implementados edição, desativação (soft delete) e reativação de manicures para o proprietário.
 - Associar explicitamente cada sessão administrativa à manicure autenticada.
 - Criar testes de API para login por PIN, isolamento entre manicures e cadastro de perfis.
 - Atualizar o README com instruções específicas de Supabase e Vercel.

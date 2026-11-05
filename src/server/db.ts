@@ -124,6 +124,7 @@ class MemoryDatabase {
   agendamentos: Map<string, Agendamento> = new Map();
   bloqueios: Map<string, Bloqueio> = new Map();
   adminAuth: AdminAuth | null = null;
+  adminAuths: Map<string, AdminAuth> = new Map();
   sessoes: Map<string, Sessao> = new Map();
   listaEspera: Map<string, ListaEspera> = new Map();
   notificacoes: Map<string, Notificacao> = new Map();
@@ -322,6 +323,11 @@ export async function hydrateSupabaseData(): Promise<void> {
   ]);
   const { data: auth, error: authError } = await supabaseClient.from('admin_auth').select('*').limit(1).maybeSingle();
   if (!authError && auth) memoryDb.adminAuth = auth as AdminAuth;
+  const { data: auths, error: authsError } = await supabaseClient.from('admin_auth').select('*');
+  if (!authsError) {
+    memoryDb.adminAuths.clear();
+    for (const item of auths || []) memoryDb.adminAuths.set(String(item.id), item as AdminAuth);
+  }
   if (memoryDb.manicures.size === 0) memoryDb.seedDefaultManicure();
   memoryDb.seqCounter = Array.from(memoryDb.agendamentos.values())
     .map((item) => Number(item.codigo?.replace(/\D/g, '') || 0))
@@ -397,7 +403,8 @@ export async function loadSupabaseConfig(): Promise<void> {
   for (const row of data) {
     const appKey = row.chave as string;
     if (appKey && row.valor !== undefined && row.valor !== null) {
-      memoryDb.configuracoes.set(appKey, {
+      const mapKey = row.manicure_id ? `${row.manicure_id}:${appKey}` : appKey;
+      memoryDb.configuracoes.set(mapKey, {
         id: String(row.id),
         chave: appKey,
         valor: row.valor,
@@ -407,10 +414,12 @@ export async function loadSupabaseConfig(): Promise<void> {
   }
 }
 
-export async function saveSupabaseConfig(configs: Record<string, unknown>): Promise<void> {
+export async function saveSupabaseConfig(configs: Record<string, unknown>, manicureId?: string | null): Promise<void> {
   if (!supabaseClient) return;
 
-  const { data, error: readError } = await supabaseClient.from('configuracoes').select('id').limit(1).single();
+  let query = supabaseClient.from('configuracoes').select('id').limit(1);
+  if (manicureId) query = query.eq('manicure_id', manicureId);
+  const { data, error: readError } = await query.maybeSingle();
   if (readError || !data) {
     throw new Error(`Não foi possível localizar as configurações no Supabase: ${readError?.message || 'registro ausente'}`);
   }

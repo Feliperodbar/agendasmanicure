@@ -25,6 +25,7 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
   const [instagram, setInstagram] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
   const [pin, setPin] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -60,11 +61,11 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
     setSaving(true);
     setFeedback(null);
     try {
-      const response = await fetch('/api/admin/manicures', {
-        method: 'POST',
+      const response = await fetch(editingId ? `/api/admin/manicures/${editingId}` : '/api/admin/manicures', {
+        method: editingId ? 'PATCH' : 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, slug, instagram, photo_url: photoUrl, pin }),
+        body: JSON.stringify(editingId ? { name, slug, instagram, photo_url: photoUrl } : { name, slug, instagram, photo_url: photoUrl, pin }),
       });
       if (response.status === 401) {
         onLogout?.();
@@ -78,12 +79,16 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
         const message = 'error' in data && typeof data.error === 'string' ? data.error : 'Não foi possível cadastrar a manicure.';
         throw new Error(message);
       }
-      setManicures((current) => [...current, data as Manicure].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+      setManicures((current) => (editingId
+        ? current.map((item) => item.id === editingId ? data as Manicure : item)
+        : [...current, data as Manicure]
+      ).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
       setName('');
       setSlug('');
       setInstagram('');
       setPhotoUrl('');
       setPin('');
+      setEditingId(null);
       setFeedback({ text: 'Manicure cadastrada com sucesso!', type: 'success' });
     } catch (error) {
       setFeedback({ text: error instanceof Error ? error.message : 'Erro ao cadastrar manicure.', type: 'error' });
@@ -115,7 +120,7 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
 
       <form onSubmit={handleSubmit} className="p-4 bg-white rounded-3xl border border-pink-200 space-y-3 shadow-2xs">
         <h2 className="font-heading font-bold text-sm text-gray-900 flex items-center gap-2">
-          <Plus size={17} className="text-[#A82647]" /> Nova manicure
+          <Plus size={17} className="text-[#A82647]" />           {editingId ? 'Editar manicure' : 'Nova manicure'}
         </h2>
         <label className="block text-xs font-bold text-gray-700">
           Nome
@@ -132,7 +137,7 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
         </label>
         <label className="block text-xs font-bold text-gray-700">
           PIN de acesso
-          <input required pattern="\d{4}" inputMode="numeric" maxLength={4} type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} className="mt-1 w-full h-11 px-3 rounded-xl border border-gray-200 text-sm" placeholder="4 números" />
+          {!editingId && <input required pattern="\d{4}" inputMode="numeric" maxLength={4} type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} className="mt-1 w-full h-11 px-3 rounded-xl border border-gray-200 text-sm" placeholder="4 números" />}
           <span className="block mt-1 text-[11px] text-gray-500">Será usado pela manicure para entrar na agenda.</span>
         </label>
         <label className="block text-xs font-bold text-gray-700">
@@ -140,8 +145,9 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
           <input type="url" value={photoUrl} onChange={(event) => setPhotoUrl(event.target.value)} className="mt-1 w-full h-11 px-3 rounded-xl border border-gray-200 text-sm" placeholder="https://..." />
         </label>
         <button type="submit" disabled={saving} className="w-full h-11 rounded-xl bg-[#802334] text-white text-sm font-bold disabled:opacity-60">
-          {saving ? 'Salvando...' : 'Cadastrar manicure'}
+          {saving ? 'Salvando...' : editingId ? 'Salvar alterações' : 'Cadastrar manicure'}
         </button>
+        {editingId && <button type="button" onClick={() => { setEditingId(null); setName(''); setSlug(''); setInstagram(''); setPhotoUrl(''); }} className="w-full h-10 text-sm font-semibold text-gray-600">Cancelar edição</button>}
       </form>
 
       <section className="space-y-2">
@@ -165,6 +171,11 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
                 <p className="text-xs text-gray-500 flex items-center gap-1"><Link size={12} /> /{manicure.slug}</p>
                 {manicure.instagram && <p className="text-xs text-[#802334] flex items-center gap-1"><Instagram size={12} /> @{manicure.instagram.replace(/^@/, '')}</p>}
               </div>
+              <button type="button" onClick={() => { setEditingId(manicure.id); setName(manicure.name); setSlug(manicure.slug); setInstagram(manicure.instagram || ''); setPhotoUrl(manicure.photo_url || ''); }} className="ml-auto text-xs font-bold text-[#802334]">Editar</button>
+              <button type="button" onClick={async () => {
+                const response = await fetch(`/api/admin/manicures/${manicure.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !manicure.active }) });
+                if (response.ok) setManicures((current) => current.map((item) => item.id === manicure.id ? { ...item, active: !manicure.active } : item));
+              }} className="text-xs font-bold text-gray-600">{manicure.active ? 'Desativar' : 'Ativar'}</button>
             </article>
           ))
         )}
