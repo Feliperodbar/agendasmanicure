@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistCliente, persistAgendamento, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots, BusinessHoursMap } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor } from './src/utils/rules.js';
@@ -811,7 +811,7 @@ app.get('/api/admin/dia-agendamentos', requireAdmin, (req, res) => {
 });
 
 // Atualizar Status (Confirmar Sinal, Concluir, Marcar Falta, Cancelar)
-app.patch('/api/admin/agendamentos/:id/status', requireAdmin, (req, res) => {
+app.patch('/api/admin/agendamentos/:id/status', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { status, sinal_confirmado } = req.body;
 
@@ -819,13 +819,30 @@ app.patch('/api/admin/agendamentos/:id/status', requireAdmin, (req, res) => {
   if (!ag) return res.status(404).json({ error: 'Agendamento não encontrado.' });
   if (!isInAdminScope(req, ag.manicure_id)) return res.status(403).json({ error: 'Agendamento fora do seu perfil.' });
 
-  if (status) ag.status = status;
-  if (typeof sinal_confirmado === 'boolean') ag.sinal_confirmado = sinal_confirmado;
-  if (status === 'confirmado') ag.sinal_confirmado = true;
+  const allowedStatuses: Agendamento['status'][] = ['pendente', 'confirmado', 'concluido', 'cancelado', 'falta'];
+  if (status !== undefined && !allowedStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Status inválido.' });
+  }
 
-  ag.atualizado_em = new Date().toISOString();
-  void persistAgendamento(ag);
-  res.json({ success: true, agendamento: ag });
+  const updatedAgendamento: Agendamento = {
+    ...ag,
+    status: status ?? ag.status,
+    sinal_confirmado: status === 'confirmado'
+      ? true
+      : typeof sinal_confirmado === 'boolean'
+        ? sinal_confirmado
+        : ag.sinal_confirmado,
+    atualizado_em: new Date().toISOString(),
+  };
+
+  try {
+    await persistAgendamentoOrThrow(updatedAgendamento);
+    memoryDb.agendamentos.set(id, updatedAgendamento);
+    res.json({ success: true, agendamento: updatedAgendamento });
+  } catch (error) {
+    console.error('Falha ao atualizar status do agendamento:', error);
+    res.status(502).json({ error: 'Não foi possível salvar o status do agendamento.' });
+  }
 });
 
 // Remarcação pela Manicure (Exceção à regra de 24h)

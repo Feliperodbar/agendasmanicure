@@ -285,6 +285,14 @@ async function supabaseUpsert(table: string, value: Persistable): Promise<void> 
   if (error) console.error(`Supabase ${table} upsert failed:`, error.message);
 }
 
+export async function persistAgendamentoOrThrow(value: Agendamento): Promise<void> {
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.from('agendamentos').upsert(value);
+  if (error) {
+    throw new Error(`Supabase agendamentos upsert failed: ${error.message}`);
+  }
+}
+
 async function supabaseDelete(table: string, id: string): Promise<void> {
   if (!supabaseClient) return;
   const { error } = await supabaseClient.from(table).delete().eq('id', id);
