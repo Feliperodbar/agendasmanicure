@@ -220,12 +220,22 @@ export const memoryDb = new MemoryDatabase();
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-export const supabaseClient: SupabaseClient | null =
-  supabaseUrl && supabaseServiceKey && supabaseUrl !== 'MY_SUPABASE_URL'
-    ? createClient(supabaseUrl, supabaseServiceKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      })
-    : null;
+function createSupabaseServerClient(): SupabaseClient | null {
+  if (!supabaseUrl || !supabaseServiceKey || supabaseUrl === 'MY_SUPABASE_URL') {
+    return null;
+  }
+
+  try {
+    return createClient(supabaseUrl.trim(), supabaseServiceKey.trim(), {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  } catch (error) {
+    console.error('Configuração do Supabase inválida:', error);
+    return null;
+  }
+}
+
+export const supabaseClient = createSupabaseServerClient();
 
 export const isUsingSupabase = !!supabaseClient;
 
