@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, ListFilter, FileText, Scissors, ShieldAlert, Sliders, UsersRound, UserRound, Repeat2 } from 'lucide-react';
+import { Calendar, ListFilter, FileText, Scissors, ShieldAlert, Sliders, UsersRound, Repeat2 } from 'lucide-react';
 
 export type ClientTab = 'agendar' | 'meus-horarios' | 'regras';
 export type AdminTab = 'agenda' | 'servicos' | 'bloqueios' | 'manicures' | 'horarios' | 'regras';
@@ -10,8 +10,8 @@ interface BottomNavProps {
   currentAdminTab: AdminTab;
   onSelectClientTab: (tab: ClientTab) => void;
   onSelectAdminTab: (tab: AdminTab) => void;
-  onChangeClientMode?: () => void;
   onChangeManicure?: () => void;
+  canManageProfiles?: boolean;
 }
 
 export function BottomNav({
@@ -20,17 +20,17 @@ export function BottomNav({
   currentAdminTab,
   onSelectClientTab,
   onSelectAdminTab,
-  onChangeClientMode,
   onChangeManicure,
+  canManageProfiles = false,
 }: BottomNavProps) {
   if (mode === 'admin') {
     const adminItems: { id: AdminTab; label: string; icon: React.ElementType }[] = [
       { id: 'agenda', label: 'Agenda', icon: Calendar },
       { id: 'servicos', label: 'Serviços', icon: Scissors },
       { id: 'bloqueios', label: 'Bloqueios', icon: ShieldAlert },
-      { id: 'manicures', label: 'Manicures', icon: UsersRound },
       { id: 'horarios', label: 'Horários', icon: Sliders },
       { id: 'regras', label: 'Regras', icon: FileText },
+      ...(canManageProfiles ? [{ id: 'manicures' as AdminTab, label: 'Manicures', icon: UsersRound }] : []),
     ];
 
     return (
@@ -62,12 +62,11 @@ export function BottomNav({
     );
   }
 
-  const clientItems: { id: ClientTab | 'trocar' | 'manicure'; label: string; icon: React.ElementType }[] = [
+  const clientItems: { id: ClientTab | 'trocar'; label: string; icon: React.ElementType }[] = [
     { id: 'agendar', label: 'Agendar', icon: Calendar },
     { id: 'meus-horarios', label: 'Meus horários', icon: ListFilter },
     { id: 'regras', label: 'Regras', icon: FileText },
     { id: 'trocar', label: 'Trocar manicure', icon: Repeat2 },
-    { id: 'manicure', label: 'Sou manicure', icon: UserRound },
   ];
 
   return (
@@ -83,8 +82,6 @@ export function BottomNav({
               onClick={() => {
                 if (item.id === 'trocar') {
                   onChangeManicure?.();
-                } else if (item.id === 'manicure') {
-                  onChangeClientMode?.();
                 } else {
                   onSelectClientTab(item.id);
                 }

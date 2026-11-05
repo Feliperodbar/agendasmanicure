@@ -15,6 +15,7 @@ import type { Manicure } from './types';
 export default function App() {
   const [mode, setMode] = useState<'client' | 'admin'>('client');
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
   const [clientTab, setClientTab] = useState<ClientTab>('agendar');
   const [adminTab, setAdminTab] = useState<AdminTab>('agenda');
   const [manicures, setManicures] = useState<Manicure[]>([]);
@@ -28,6 +29,7 @@ export default function App() {
       .then((data) => {
         if (data.isLoggedIn) {
           setIsAdminLoggedIn(true);
+          setIsOwner(Boolean(data.isOwner));
         }
       })
       .catch(() => {});
@@ -47,10 +49,15 @@ export default function App() {
   const handleAdminSuccess = () => {
     setIsAdminLoggedIn(true);
     setAdminTab('agenda');
+    fetch('/api/admin/session', { credentials: 'include' })
+      .then((res) => res.json())
+      .then((data) => setIsOwner(Boolean(data.isOwner)))
+      .catch(() => setIsOwner(false));
   };
 
   const handleAdminLogout = () => {
     setIsAdminLoggedIn(false);
+    setIsOwner(false);
     setMode('client');
     setClientTab('agendar');
   };
@@ -110,7 +117,7 @@ export default function App() {
                 )}
                 {adminTab === 'servicos' && <AdminServicosView />}
                 {adminTab === 'bloqueios' && <AdminBloqueiosView />}
-                {adminTab === 'manicures' && <AdminManicuresView onLogout={handleAdminLogout} />}
+                {adminTab === 'manicures' && isOwner && <AdminManicuresView onLogout={handleAdminLogout} />}
                 {adminTab === 'horarios' && <AdminHorariosView onLogout={handleAdminLogout} />}
                 {adminTab === 'regras' && <RulesView />}
               </div>
@@ -124,10 +131,15 @@ export default function App() {
             mode={mode}
             currentClientTab={clientTab}
             currentAdminTab={adminTab}
-            onSelectClientTab={(tab) => setClientTab(tab)}
+            onSelectClientTab={(tab) => {
+              setClientTab(tab);
+              if (tab === 'meus-horarios') {
+                setShowHome(false);
+              }
+            }}
             onSelectAdminTab={(tab) => setAdminTab(tab)}
             onChangeManicure={() => setShowHome(true)}
-            onChangeClientMode={() => setMode('admin')}
+            canManageProfiles={isOwner}
           />
         )}
       </main>

@@ -109,6 +109,7 @@ export function AdminBloqueiosView() {
           <label className="text-xs font-bold text-gray-700 block mb-1">Data:</label>
           <input
             type="date"
+            lang="pt-BR"
             required
             value={dataInicio}
             onChange={(e) => setDataInicio(e.target.value)}

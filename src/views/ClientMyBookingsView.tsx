@@ -92,7 +92,7 @@ export function ClientMyBookingsView({ mode, onModeChange }: ClientMyBookingsVie
   return (
     <div className="pb-28 pt-3 px-4 max-w-[430px] mx-auto space-y-4">
       {/* Header com avatar, instagram, aviso sazonal e role switcher */}
-      <Header mode={mode} onModeChange={onModeChange} />
+      <Header mode={mode} onModeChange={onModeChange} global />
 
       <section aria-labelledby="meus-horarios-heading" className="space-y-3">
         <h2 id="meus-horarios-heading" className="font-heading font-extrabold text-xl text-[#1a1012] tracking-tight">
@@ -189,6 +189,7 @@ export function ClientMyBookingsView({ mode, onModeChange }: ClientMyBookingsVie
 
                     <div>
                       <h4 className="font-heading font-bold text-base text-gray-900">{b.servico_nome}</h4>
+                      <p className="text-xs font-semibold text-[#802334] mt-1">{b.manicure_nome}</p>
                       <div className="flex items-center gap-3 text-xs text-gray-600 mt-1 font-medium">
                         <span className="flex items-center gap-1">
                           <Calendar size={13} className="text-gray-400" />

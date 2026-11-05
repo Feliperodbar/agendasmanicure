@@ -86,7 +86,7 @@ app.get('/api/admin/session', async (req, res) => {
   if (!sessao || new Date(sessao.expira_em) < new Date()) {
     return res.json({ isLoggedIn: false });
   }
-  res.json({ isLoggedIn: true });
+  res.json({ isLoggedIn: true, isOwner: !sessao.manicure_id });
 });
 
 // -------------------------------------------------------------
@@ -137,6 +137,7 @@ function slugifyManicure(value: string): string {
 }
 
 app.get('/api/admin/manicures', requireAdmin, (req, res) => {
+  if (!requireOwner(req, res)) return;
   const scope = adminManicureId(req);
   res.json(Array.from(memoryDb.manicures.values())
     .filter((item) => !scope || item.id === scope)
@@ -471,6 +472,7 @@ app.post('/api/meus-horarios', (req, res) => {
     .map((a) => ({
       ...a,
       servico_nome: memoryDb.servicos.get(a.servico_id)?.nome || 'Serviço',
+      manicure_nome: memoryDb.manicures.get(a.manicure_id || '')?.name || 'Manicure',
       cliente_nome: cliente.nome,
     }))
     .sort((a, b) => new Date(b.data_hora_inicio).getTime() - new Date(a.data_hora_inicio).getTime());
@@ -650,28 +652,10 @@ app.post('/api/admin/login', async (req, res) => {
   const inputHash = hashPin(pin);
   const authenticatedAdmin = authCandidates.find((auth) => auth.pin_hash === inputHash);
   if (!authenticatedAdmin) {
-    const fallbackAuth = memoryDb.adminAuth || authCandidates[0];
-    if (!fallbackAuth) {
+    if (authCandidates.length === 0) {
       return res.status(400).json({ error: 'PIN ainda não configurado. Defina no primeiro acesso.' });
     }
-    memoryDb.adminAuth = fallbackAuth;
-    const now = new Date();
-    if (fallbackAuth.bloqueado_ate && new Date(fallbackAuth.bloqueado_ate) > now) {
-      const restanteMin = Math.ceil(
-        (new Date(fallbackAuth.bloqueado_ate).getTime() - now.getTime()) / 60000
-      );
-      return res.status(429).json({
-        error: `Muitas tentativas incorretas. Tente novamente em ${restanteMin} minuto(s).`,
-      });
-    }
-    const falhas = (fallbackAuth.tentativas_falhas || 0) + 1;
-    fallbackAuth.tentativas_falhas = falhas >= 5 ? 0 : falhas;
-    fallbackAuth.bloqueado_ate = falhas >= 5 ? new Date(Date.now() + 5 * 60 * 1000).toISOString() : null;
-    void persistAdminAuth(fallbackAuth);
-    if (falhas >= 5) {
-      return res.status(429).json({ error: '5 tentativas erradas. Acesso bloqueado por 5 minutos.' });
-    }
-    return res.status(401).json({ error: `PIN incorreto. Restam ${5 - falhas} tentativa(s).` });
+    return res.status(401).json({ error: 'PIN incorreto.' });
   }
   memoryDb.adminAuth = authenticatedAdmin;
   if (!memoryDb.adminAuth) {

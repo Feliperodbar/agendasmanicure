@@ -216,10 +216,35 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
     setTimeout(() => setCopiedPix(false), 3000);
   };
 
+  const stepLabels = ['Serviço', 'Data e horário', 'Seus dados'];
+  const formatMoney = (value: number) => `R$ ${Number(value).toFixed(2).replace('.', ',')}`;
+  const morningSlots = slots.filter((slot) => Number(slot.time.slice(0, 2)) < 12);
+  const afternoonSlots = slots.filter((slot) => Number(slot.time.slice(0, 2)) >= 12);
+
   return (
     <div className="pb-28 pt-3 px-4 max-w-[430px] mx-auto">
       {/* Header com avatar, link instagram, aviso sazonal e role switcher */}
       <Header mode={mode} onModeChange={onModeChange} manicure={manicure} />
+
+      {step < 4 && (
+        <ol aria-label="Etapas do agendamento" className="mb-5 grid grid-cols-3 gap-1">
+          {stepLabels.map((label, index) => {
+            const itemStep = index + 1;
+            const active = step === itemStep;
+            const complete = step > itemStep;
+            return (
+              <li key={label} className={`text-center text-[10px] font-bold ${active || complete ? 'text-[#802334]' : 'text-gray-400'}`}>
+                <span className={`mx-auto mb-1 flex h-6 w-6 items-center justify-center rounded-full border text-[11px] ${
+                  active ? 'border-[#802334] bg-[#F7C4D0]' : complete ? 'border-[#802334] bg-[#802334] text-white' : 'border-gray-300'
+                }`}>
+                  {complete ? '✓' : itemStep}
+                </span>
+                {label}
+              </li>
+            );
+          })}
+        </ol>
+      )}
 
       {errorMsg && (
         <div role="alert" className="mb-4 p-3.5 bg-red-50 border border-red-200 text-red-800 rounded-2xl text-xs font-semibold flex items-center gap-2">
@@ -258,6 +283,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
                       <p className="text-xs text-gray-500 font-medium mt-0.5">
                         {srv.duracao_minutos} min • sinal de 50%: R$ {sinalCalc}
                       </p>
+                      {srv.descricao && <p className="mt-1 text-[11px] text-gray-500">{srv.descricao}</p>}
                     </div>
                   </div>
 
@@ -340,8 +366,18 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-2">
-                {slots.map((s) => (
+              <div className="space-y-3">
+                {[
+                  ['Manhã', morningSlots],
+                  ['Tarde', afternoonSlots],
+                ].map(([period, periodSlots]) => {
+                  const availableSlots = periodSlots as { time: string; available: boolean }[];
+                  if (!availableSlots.length) return null;
+                  return (
+                    <div key={period as string}>
+                      <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-wider text-gray-500">{period as string}</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {availableSlots.map((s) => (
                   <button
                     key={s.time}
                     type="button"
@@ -354,7 +390,11 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
                   >
                     {s.time}
                   </button>
-                ))}
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -385,6 +425,16 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
           <h2 id="confirm-heading" className="font-heading font-extrabold text-xl text-[#1a1012] tracking-tight">
             Seus dados
           </h2>
+
+          <div className="rounded-2xl border border-pink-200 bg-pink-50/50 p-3 text-xs">
+            <p className="mb-2 font-extrabold text-gray-900">Resumo do agendamento</p>
+            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-gray-700">
+              <span>Manicure</span><strong>{manicure?.name || 'Manicure'}</strong>
+              <span>Serviço</span><strong>{selectedService.nome}</strong>
+              <span>Data e horário</span><strong>{formatDateForDisplay(date)} às {selectedSlot}</strong>
+              <span>Total / sinal</span><strong>{formatMoney(selectedService.preco)} / {formatMoney(selectedService.preco * 0.5)}</strong>
+            </div>
+          </div>
 
           <div className="space-y-3">
             <div>

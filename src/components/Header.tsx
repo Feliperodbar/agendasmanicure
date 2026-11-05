@@ -7,9 +7,10 @@ interface HeaderProps {
   mode: 'client' | 'admin';
   onModeChange: (mode: 'client' | 'admin') => void;
   manicure?: Manicure | null;
+  global?: boolean;
 }
 
-export function Header({ mode, onModeChange, manicure }: HeaderProps) {
+export function Header({ mode, onModeChange, manicure, global = false }: HeaderProps) {
   const showSeasonalWarning = isSeasonalPeriod();
 
   return (
@@ -17,19 +18,19 @@ export function Header({ mode, onModeChange, manicure }: HeaderProps) {
       {/* Top Title Bar: Avatar circular rosa à esquerda + título & @nataliamarcelanail */}
       <div className="flex items-center gap-3">
         {/* N Avatar Circle à esquerda */}
-        {manicure?.photo_url ? (
+        {!global && manicure?.photo_url ? (
           <img src={manicure.photo_url} alt="" className="w-11 h-11 rounded-full object-cover shrink-0 shadow-2xs" />
         ) : (
           <div className="w-11 h-11 rounded-full bg-[#F7C4D0] text-[#1a1012] font-heading font-extrabold text-lg flex items-center justify-center shrink-0 shadow-2xs">
-            {(manicure?.name || 'Natália Marcela').charAt(0)}
+            {(global ? 'M' : manicure?.name || 'Natália Marcela').charAt(0)}
           </div>
         )}
 
         <div>
           <h1 className="font-heading font-extrabold text-[21px] leading-tight text-[#1a1012] tracking-tight">
-            {manicure?.name || 'Natália Marcela'} | Nail designer
+            {global ? 'Meus horários' : `${manicure?.name || 'Natália Marcela'} | Nail designer`}
           </h1>
-          <div className="flex items-center gap-3 mt-1.5">
+          {!global && <div className="flex items-center gap-3 mt-1.5">
             <a
               href={`https://instagram.com/${(manicure?.instagram || 'nataliamarcelanail').replace(/^@/, '')}`}
               target="_blank"
@@ -40,7 +41,7 @@ export function Header({ mode, onModeChange, manicure }: HeaderProps) {
               @{(manicure?.instagram || 'nataliamarcelanail').replace(/^@/, '')}
               <ExternalLink size={11} className="inline ml-0.5" />
             </a>
-          </div>
+          </div>}
         </div>
       </div>
 

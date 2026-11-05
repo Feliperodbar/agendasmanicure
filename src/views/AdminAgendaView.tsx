@@ -429,6 +429,7 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
       <div className="space-y-2.5">
         <input
           type="date"
+          lang="pt-BR"
           value={`${year}-${String(month).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`}
           onChange={(e) => {
             if (e.target.value) {
@@ -612,6 +613,7 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
               <label className="text-xs font-bold text-gray-700 block mb-1">Nova Data:</label>
               <input
                 type="date"
+                lang="pt-BR"
                 value={newRescheduleDate}
                 onChange={(e) => setNewRescheduleDate(e.target.value)}
                 className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm font-semibold"
