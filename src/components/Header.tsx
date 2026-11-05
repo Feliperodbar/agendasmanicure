@@ -7,10 +7,9 @@ interface HeaderProps {
   mode: 'client' | 'admin';
   onModeChange: (mode: 'client' | 'admin') => void;
   manicure?: Manicure | null;
-  onBackToHome?: () => void;
 }
 
-export function Header({ mode, onModeChange, manicure, onBackToHome }: HeaderProps) {
+export function Header({ mode, onModeChange, manicure }: HeaderProps) {
   const showSeasonalWarning = isSeasonalPeriod();
 
   return (
@@ -41,18 +40,6 @@ export function Header({ mode, onModeChange, manicure, onBackToHome }: HeaderPro
               @{(manicure?.instagram || 'nataliamarcelanail').replace(/^@/, '')}
               <ExternalLink size={11} className="inline ml-0.5" />
             </a>
-            {onBackToHome && (
-              <button type="button" onClick={onBackToHome} className="text-sm font-semibold text-[#802334] underline">
-                Trocar manicure
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => onModeChange('admin')}
-              className="text-sm font-semibold text-[#802334] underline hover:text-[#5c1724]"
-            >
-              Sou a manicure
-            </button>
           </div>
         </div>
       </div>

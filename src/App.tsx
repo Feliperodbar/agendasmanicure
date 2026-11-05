@@ -78,7 +78,6 @@ export default function App() {
                 onModeChange={(m) => setMode(m)}
                 manicureSlug={selectedManicure?.slug || 'natalia'}
                 manicure={selectedManicure}
-                onBackToHome={() => setShowHome(true)}
               />
             )}
             {!showHome && clientTab === 'meus-horarios' && (
@@ -127,6 +126,8 @@ export default function App() {
             currentAdminTab={adminTab}
             onSelectClientTab={(tab) => setClientTab(tab)}
             onSelectAdminTab={(tab) => setAdminTab(tab)}
+            onChangeManicure={() => setShowHome(true)}
+            onChangeClientMode={() => setMode('admin')}
           />
         )}
       </main>

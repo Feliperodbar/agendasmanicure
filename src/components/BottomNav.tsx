@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, ListFilter, FileText, Scissors, ShieldAlert, Sliders, UsersRound } from 'lucide-react';
+import { Calendar, ListFilter, FileText, Scissors, ShieldAlert, Sliders, UsersRound, UserRound, Repeat2 } from 'lucide-react';
 
 export type ClientTab = 'agendar' | 'meus-horarios' | 'regras';
 export type AdminTab = 'agenda' | 'servicos' | 'bloqueios' | 'manicures' | 'horarios' | 'regras';
@@ -10,6 +10,8 @@ interface BottomNavProps {
   currentAdminTab: AdminTab;
   onSelectClientTab: (tab: ClientTab) => void;
   onSelectAdminTab: (tab: AdminTab) => void;
+  onChangeClientMode?: () => void;
+  onChangeManicure?: () => void;
 }
 
 export function BottomNav({
@@ -18,6 +20,8 @@ export function BottomNav({
   currentAdminTab,
   onSelectClientTab,
   onSelectAdminTab,
+  onChangeClientMode,
+  onChangeManicure,
 }: BottomNavProps) {
   if (mode === 'admin') {
     const adminItems: { id: AdminTab; label: string; icon: React.ElementType }[] = [
@@ -58,10 +62,12 @@ export function BottomNav({
     );
   }
 
-  const clientItems: { id: ClientTab; label: string; icon: React.ElementType }[] = [
+  const clientItems: { id: ClientTab | 'trocar' | 'manicure'; label: string; icon: React.ElementType }[] = [
     { id: 'agendar', label: 'Agendar', icon: Calendar },
     { id: 'meus-horarios', label: 'Meus horários', icon: ListFilter },
     { id: 'regras', label: 'Regras', icon: FileText },
+    { id: 'trocar', label: 'Trocar manicure', icon: Repeat2 },
+    { id: 'manicure', label: 'Sou manicure', icon: UserRound },
   ];
 
   return (
@@ -74,7 +80,15 @@ export function BottomNav({
             <button
               key={item.id}
               type="button"
-              onClick={() => onSelectClientTab(item.id)}
+              onClick={() => {
+                if (item.id === 'trocar') {
+                  onChangeManicure?.();
+                } else if (item.id === 'manicure') {
+                  onChangeClientMode?.();
+                } else {
+                  onSelectClientTab(item.id);
+                }
+              }}
               className={`flex flex-col items-center justify-center flex-1 h-12 transition-all ${
                 active
                   ? 'border-2 border-black rounded-lg text-[#802334] font-bold px-2'
@@ -82,7 +96,7 @@ export function BottomNav({
               }`}
             >
               <Icon size={20} strokeWidth={active ? 2.5 : 1.8} className={active ? 'text-[#802334]' : 'text-gray-500'} />
-              <span className={`text-[11px] mt-0.5 ${active ? 'font-bold text-[#802334]' : ''}`}>
+              <span className={`text-[10px] mt-0.5 ${active ? 'font-bold text-[#802334]' : ''}`}>
                 {item.label}
               </span>
             </button>

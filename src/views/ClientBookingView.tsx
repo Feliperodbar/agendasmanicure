@@ -19,7 +19,6 @@ interface ClientBookingViewProps {
   onModeChange: (mode: 'client' | 'admin') => void;
   manicureSlug?: string;
   manicure?: Manicure | null;
-  onBackToHome?: () => void;
 }
 
 const SERVICE_DOT_COLORS: Record<string, string> = {
@@ -30,7 +29,7 @@ const SERVICE_DOT_COLORS: Record<string, string> = {
   'Manutenção': '#5B7B63',
 };
 
-export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicureSlug = 'natalia', manicure, onBackToHome }: ClientBookingViewProps) {
+export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicureSlug = 'natalia', manicure }: ClientBookingViewProps) {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1); // 1: Serviço, 2: Data/Hora, 3: Seus Dados, 4: Sucesso Pix
   const [services, setServices] = useState<Servico[]>([]);
   const [selectedService, setSelectedService] = useState<Servico | null>(null);
@@ -220,7 +219,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
   return (
     <div className="pb-28 pt-3 px-4 max-w-[430px] mx-auto">
       {/* Header com avatar, link instagram, aviso sazonal e role switcher */}
-      <Header mode={mode} onModeChange={onModeChange} manicure={manicure} onBackToHome={onBackToHome} />
+      <Header mode={mode} onModeChange={onModeChange} manicure={manicure} />
 
       {errorMsg && (
         <div role="alert" className="mb-4 p-3.5 bg-red-50 border border-red-200 text-red-800 rounded-2xl text-xs font-semibold flex items-center gap-2">
