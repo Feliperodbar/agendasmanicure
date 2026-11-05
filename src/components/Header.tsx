@@ -23,7 +23,7 @@ export function Header({ mode, onModeChange }: HeaderProps) {
           <h1 className="font-heading font-extrabold text-[21px] leading-tight text-[#1a1012] tracking-tight">
             Natália Marcela | Nail designer
           </h1>
-          <div className="flex items-center gap-2 mt-1.5">
+          <div className="flex items-center gap-3 mt-1.5">
             <a
               href="https://instagram.com/nataliamarcelanail"
               target="_blank"
@@ -34,6 +34,13 @@ export function Header({ mode, onModeChange }: HeaderProps) {
               @nataliamarcelanail
               <ExternalLink size={11} className="inline ml-0.5" />
             </a>
+            <button
+              type="button"
+              onClick={() => onModeChange('admin')}
+              className="text-sm font-semibold text-[#802334] underline hover:text-[#5c1724]"
+            >
+              Sou a manicure
+            </button>
           </div>
         </div>
       </div>
@@ -50,17 +57,6 @@ export function Header({ mode, onModeChange }: HeaderProps) {
           }`}
         >
           Cliente
-        </button>
-        <button
-          type="button"
-          onClick={() => onModeChange('admin')}
-          className={`flex-1 min-h-[40px] py-2 text-xs font-bold rounded-full transition-all text-center ${
-            mode === 'admin'
-              ? 'bg-[#F7C4D0] text-[#1a1012] shadow-2xs'
-              : 'bg-transparent text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Sou a manicure
         </button>
       </div>
 
