@@ -57,6 +57,14 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
 
+  const handleAdminResponse = (res: Response): boolean => {
+    if (res.status === 401) {
+      onLogout();
+      return false;
+    }
+    return true;
+  };
+
   useEffect(() => {
     fetch('/api/servicos')
       .then((r) => r.json())
@@ -76,7 +84,10 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
 
   const loadMonth = async () => {
     try {
-      const res = await fetch(`/api/admin/mes-status?ano=${year}&mes=${month}`);
+      const res = await fetch(`/api/admin/mes-status?ano=${year}&mes=${month}`, {
+        credentials: 'include',
+      });
+      if (!handleAdminResponse(res)) return;
       const data = await res.json();
       if (res.ok) {
         setMonthStatus(data.dayStatus || {});
@@ -90,7 +101,10 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
     setLoadingDay(true);
     const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
     try {
-      const res = await fetch(`/api/admin/dia-agendamentos?data=${dateStr}`);
+      const res = await fetch(`/api/admin/dia-agendamentos?data=${dateStr}`, {
+        credentials: 'include',
+      });
+      if (!handleAdminResponse(res)) return;
       const data = await res.json();
       if (res.ok) {
         setDayBookings(data.agendamentos || []);
@@ -116,9 +130,11 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
     try {
       const res = await fetch(`/api/admin/agendamentos/${id}/status`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, sinal_confirmado }),
       });
+      if (!handleAdminResponse(res)) return;
       if (res.ok) {
         setFeedbackMsg({ text: 'Status atualizado com sucesso!', type: 'success' });
         loadMonth();
@@ -136,7 +152,9 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
     try {
       const res = await fetch(`/api/admin/agendamentos/${deleteId}`, {
         method: 'DELETE',
+        credentials: 'include',
       });
+      if (!handleAdminResponse(res)) return;
       if (res.ok) {
         setFeedbackMsg({ text: 'Agendamento excluído do banco.', type: 'success' });
         loadMonth();
@@ -156,12 +174,14 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
     try {
       const res = await fetch(`/api/admin/agendamentos/${rescheduleItem.id}/remarcar`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           novaData: newRescheduleDate,
           novoHorario: newRescheduleTime,
         }),
       });
+      if (!handleAdminResponse(res)) return;
       if (res.ok) {
         setFeedbackMsg({ text: `Remarcado para ${newRescheduleDate} às ${newRescheduleTime}.`, type: 'success' });
         loadMonth();
@@ -187,6 +207,7 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
     try {
       const res = await fetch('/api/admin/agendamentos/manual', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           servicoId: manualServicoId,

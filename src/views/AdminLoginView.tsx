@@ -52,6 +52,7 @@ export function AdminLoginView({ onSuccess, mode, onModeChange }: AdminLoginView
         try {
           const res = await fetch('/api/admin/setup-pin', {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ pin: completedPin }),
           });
@@ -77,6 +78,7 @@ export function AdminLoginView({ onSuccess, mode, onModeChange }: AdminLoginView
     try {
       const res = await fetch('/api/admin/login', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin: completedPin }),
       });

@@ -17,7 +17,7 @@ export default function App() {
 
   // Ao carregar, verifica se já existe sessão de admin ativa
   useEffect(() => {
-    fetch('/api/admin/session')
+    fetch('/api/admin/session', { credentials: 'include' })
       .then((res) => res.json())
       .then((data) => {
         if (data.isLoggedIn) {
