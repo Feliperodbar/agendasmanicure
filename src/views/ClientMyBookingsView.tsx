@@ -169,6 +169,7 @@ export function ClientMyBookingsView({ mode, onModeChange }: ClientMyBookingsVie
             ) : (
               bookings.map((b) => {
                 const isCancelado = b.status === 'cancelado';
+                const isReservaExpirada = b.pagamento_status === 'expirado';
                 const hasDeposit = Number(b.valor_sinal) > 0;
                 const isPendente = hasDeposit && (b.status === 'pendente' || !b.sinal_confirmado);
 
@@ -187,7 +188,7 @@ export function ClientMyBookingsView({ mode, onModeChange }: ClientMyBookingsVie
                             : 'bg-blue-50 text-blue-800 border-blue-200'
                         }`}
                       >
-                        {isPendente && !isCancelado ? 'Aguardando Sinal' : b.status.toUpperCase()}
+                        {isReservaExpirada ? 'Reserva expirada' : isPendente && !isCancelado ? 'Aguardando Sinal' : b.status.toUpperCase()}
                       </span>
                     </div>
 
@@ -217,7 +218,9 @@ export function ClientMyBookingsView({ mode, onModeChange }: ClientMyBookingsVie
 
                     {isCancelado && (
                       <div className="pt-1 text-[11px] font-semibold text-gray-500">
-                        {hasDeposit ? (
+                        {isReservaExpirada ? (
+                          'Sua reserva expirou e o horário foi liberado.'
+                        ) : hasDeposit ? (
                           <>
                             Status de estorno:{' '}
                             <strong className={b.estorno_elegivel ? 'text-emerald-700' : 'text-red-700'}>

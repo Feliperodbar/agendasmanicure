@@ -48,11 +48,15 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [bookingResult, setBookingResult] = useState<{
+    id: string;
     codigo: string;
     valorSinal: number;
     sinalPct: number;
     chavePix: string;
+    expiresAt: string | null;
+    paymentStatus: 'aguardando' | 'confirmado';
   } | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
 
   // Lista de Espera Modal
   const [showWaitlist, setShowWaitlist] = useState(false);
@@ -71,6 +75,114 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     setDate(todayStr);
   }, [manicureSlug]);
+
+  useEffect(() => {
+    const expiresAt = bookingResult?.expiresAt;
+    if (
+      !bookingResult ||
+      !expiresAt ||
+      bookingResult.sinalPct === 0 ||
+      bookingResult.paymentStatus !== 'aguardando'
+    ) return;
+
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000));
+      setRemainingSeconds(remaining);
+      if (remaining > 0) return false;
+
+      if (intervalId) clearInterval(intervalId);
+      setBookingResult(null);
+      setSelectedSlot('');
+      setStep(2);
+      setErrorMsg('Sua reserva expirou. O horário foi liberado.');
+
+      if (selectedService && date) {
+        setLoadingSlots(true);
+        fetch(`/api/disponibilidade?data=${date}&servicoId=${selectedService.id}&manicure=${encodeURIComponent(manicureSlug)}`)
+          .then(async (res) => {
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Não foi possível atualizar os horários.');
+            setSlots(data.slots || []);
+          })
+          .catch(() => setErrorMsg('Sua reserva expirou. O horário foi liberado, mas não foi possível atualizar os horários. Tente novamente.'))
+          .finally(() => setLoadingSlots(false));
+      }
+      return true;
+    };
+
+    if (updateCountdown()) return;
+    intervalId = setInterval(updateCountdown, 1000);
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [bookingResult?.expiresAt, bookingResult?.sinalPct, selectedService?.id, date, manicureSlug]);
+
+  useEffect(() => {
+    if (
+      !bookingResult ||
+      bookingResult.sinalPct === 0 ||
+      bookingResult.paymentStatus !== 'aguardando'
+    ) return;
+
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let stopped = false;
+    const pollPaymentStatus = async () => {
+      try {
+        const res = await fetch(`/api/agendamentos/${bookingResult.id}/estado-pagamento`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nome, whatsapp }),
+          cache: 'no-store',
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Não foi possível consultar o pagamento.');
+
+        if (data.pagamento_status === 'confirmado' && data.status === 'confirmado') {
+          setErrorMsg('');
+          setBookingResult((current) => current?.id === bookingResult.id
+            ? { ...current, paymentStatus: 'confirmado', expiresAt: null }
+            : current);
+          return;
+        }
+
+        if (data.pagamento_status === 'expirado' || data.status === 'cancelado') {
+          const expired = data.pagamento_status === 'expirado';
+          const statusMessage = expired
+            ? 'Sua reserva expirou. O horário foi liberado.'
+            : 'Seu agendamento foi cancelado. O horário foi liberado.';
+          setBookingResult(null);
+          setSelectedSlot('');
+          setStep(2);
+          setErrorMsg(statusMessage);
+          if (selectedService && date) {
+            try {
+              const availability = await fetch(
+                `/api/disponibilidade?data=${date}&servicoId=${selectedService.id}&manicure=${encodeURIComponent(manicureSlug)}`,
+                { cache: 'no-store' },
+              );
+              const availabilityData = await availability.json();
+              if (!availability.ok) throw new Error(availabilityData.error || 'Não foi possível atualizar os horários.');
+              setSlots(availabilityData.slots || []);
+            } catch {
+              setErrorMsg(`${statusMessage} Não foi possível atualizar os horários. Tente novamente.`);
+            }
+          }
+          return;
+        }
+      } catch {
+        setErrorMsg('Não foi possível verificar o pagamento agora. O cronômetro continua ativo.');
+      }
+
+      if (!stopped) timeoutId = setTimeout(pollPaymentStatus, 5000);
+    };
+
+    timeoutId = setTimeout(pollPaymentStatus, 5000);
+    return () => {
+      stopped = true;
+      clearTimeout(timeoutId);
+    };
+  }, [bookingResult?.id, bookingResult?.paymentStatus, bookingResult?.sinalPct, nome, whatsapp, selectedService?.id, date, manicureSlug]);
 
   const handleSelectService = (srv: Servico) => {
     setSelectedService(srv);
@@ -170,11 +282,17 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
       }
 
       setBookingResult({
+        id: dataRes.agendamento.id,
         codigo: dataRes.codigo,
         valorSinal: dataRes.valorSinal,
         sinalPct: dataRes.sinalPct,
         chavePix: dataRes.chavePix,
+        expiresAt: dataRes.expiresAt || null,
+        paymentStatus: dataRes.sinalPct === 0 ? 'confirmado' : 'aguardando',
       });
+      setRemainingSeconds(dataRes.expiresAt
+        ? Math.max(0, Math.ceil((Date.parse(dataRes.expiresAt) - Date.now()) / 1000))
+        : 0);
       setStep(4);
     } catch (err: any) {
       setErrorMsg(err?.message || 'Erro ao registrar agendamento. Verifique sua conexão.');
@@ -221,6 +339,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
 
   const stepLabels = ['Serviço', 'Data e horário', 'Seus dados'];
   const formatMoney = (value: number) => `R$ ${Number(value).toFixed(2).replace('.', ',')}`;
+  const countdownLabel = `${String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:${String(remainingSeconds % 60).padStart(2, '0')}`;
   const sinalPct = getDepositPercentageForDate(date);
   const morningSlots = slots.filter((slot) => Number(slot.time.slice(0, 2)) < 12);
   const afternoonSlots = slots.filter((slot) => Number(slot.time.slice(0, 2)) >= 12);
@@ -514,7 +633,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
               onClick={handleConfirmBooking}
               className="flex-1 h-12 rounded-2xl bg-[#F7C4D0] text-gray-900 font-extrabold text-xs disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#f3b0c0] shadow-xs"
             >
-              {isSubmitting ? 'Verificando vaga...' : 'Confirmar Agendamento'}
+              {isSubmitting ? 'Verificando vaga...' : 'Avançar para Pagamento'}
             </button>
           </div>
         </section>
@@ -523,32 +642,40 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
       {/* PASSO 4: Tela de Confirmação com Código NM-#### e Pix em Destaque */}
       {step === 4 && bookingResult && (
         <section aria-labelledby="sucesso-heading" className="text-center space-y-4 pt-2 animate-fadeIn">
-          <div className="w-16 h-16 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto shadow-xs">
-            <CheckCircle2 size={36} />
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto shadow-xs ${
+            bookingResult.paymentStatus === 'confirmado' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'
+          }`}>
+            {bookingResult.paymentStatus === 'confirmado' ? <CheckCircle2 size={36} /> : <Clock size={36} />}
           </div>
 
           <h2 id="sucesso-heading" className="font-heading font-extrabold text-2xl text-gray-900 tracking-tight">
-            {bookingResult.sinalPct === 0 ? 'Agendamento Confirmado!' : 'Pré-agendamento Criado!'}
+            {bookingResult.paymentStatus === 'confirmado' ? 'Agendamento Confirmado!' : 'Reserva aguardando pagamento'}
           </h2>
 
           <div className="inline-block bg-gray-100 border border-gray-200 px-4 py-1.5 rounded-full font-heading font-extrabold text-lg text-gray-900 tracking-wide">
             {bookingResult.codigo}
           </div>
 
-          {bookingResult.sinalPct === 0 ? (
+          {bookingResult.paymentStatus === 'confirmado' ? (
             <div className="p-4 bg-emerald-50 border-2 border-emerald-200 rounded-3xl text-left space-y-2">
               <span className="text-[11px] font-extrabold text-emerald-900 uppercase tracking-wider block">
-                Nenhum sinal antecipado necessário
+                {bookingResult.sinalPct === 0 ? 'Nenhum sinal antecipado necessário' : 'Pagamento identificado'}
               </span>
               <p className="text-sm font-semibold text-gray-900 leading-relaxed">
-                Seu horário está confirmado. Para agendamentos em dezembro, permanece o sinal de 50%.
+                Seu horário está confirmado.
               </p>
             </div>
           ) : (
             <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-3xl text-left space-y-3 shadow-sm">
               <span className="text-[11px] font-extrabold text-amber-900 uppercase tracking-wider block">
-                Garantia do Horário (Sinal de {bookingResult.sinalPct}%)
+                Reserva temporária — sinal de {bookingResult.sinalPct}%
               </span>
+
+              {bookingResult.expiresAt && (
+                <p role="timer" aria-live="off" className="rounded-xl bg-white/80 p-3 text-center text-sm font-bold text-amber-950">
+                  Pague em até 20 minutos: <span className="font-mono text-lg">{countdownLabel}</span>
+                </p>
+              )}
 
               <p className="text-sm font-semibold text-gray-900 leading-relaxed">
                 Para garantir o horário, o pagamento antecipado é de {bookingResult.sinalPct}%: <strong className="font-heading font-extrabold text-base text-gray-900">{formatMoney(bookingResult.valorSinal)}</strong> — Enviar o pix para a chave: <span className="font-heading font-bold text-[#802334] select-all bg-amber-100/90 px-1.5 py-0.5 rounded-md border border-amber-200">{bookingResult.chavePix}</span>
@@ -564,7 +691,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
               </button>
 
               <p className="text-[11px] text-gray-600 leading-normal">
-                Envie o comprovante para o WhatsApp de Natália Marcela. Seu horário fica pré-reservado e é confirmado pela manicure assim que o sinal for identificado.
+                Envie o comprovante para o WhatsApp da manicure. A reserva será cancelada e o horário liberado se o pagamento não for identificado em 20 minutos.
               </p>
             </div>
           )}

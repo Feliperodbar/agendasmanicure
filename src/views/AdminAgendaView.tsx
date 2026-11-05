@@ -523,7 +523,7 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
                     </span>
                     <span className="font-semibold text-gray-700">
                       {hasDeposit
-                        ? b.sinal_confirmado ? '✓ Sinal Identificado' : 'Aguardando Comprovante'
+                        ? b.sinal_confirmado ? '✓ Sinal Identificado' : 'Aguardando Pix'
                         : 'Dispensado em novembro'}
                     </span>
                   </div>

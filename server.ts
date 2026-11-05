@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, listAgendamentosInRange, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots, BusinessHoursMap } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor, getDepositPercentageForDate } from './src/utils/rules.js';
@@ -275,7 +275,8 @@ app.get('/api/configuracoes-publicas', (req, res) => {
 });
 
 // Disponibilidade de horários em tempo real
-app.get('/api/disponibilidade', (req, res) => {
+app.get('/api/disponibilidade', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const { data, servicoId } = req.query as { data?: string; servicoId?: string };
   if (!data || !servicoId) {
     return res.status(400).json({ error: 'Data e ID do serviço são obrigatórios.' });
@@ -294,9 +295,23 @@ app.get('/api/disponibilidade', (req, res) => {
   const bufferMinutes = Number(configValue(req, 'buffer_minutos', 10));
 
   // Filtrar agendamentos e bloqueios da data
-  const dayBookings = Array.from(memoryDb.agendamentos.values()).filter((a) =>
-    a.data_hora_inicio.startsWith(data) && (!a.manicure_id || a.manicure_id === manicure.id)
-  );
+  const nextDate = new Date(`${data}T12:00:00Z`);
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  let dayBookings: Agendamento[];
+  try {
+    await expirePixBookings();
+    dayBookings = await listAgendamentosInRange(
+      toSaoPauloISO(data, '00:00'),
+      toSaoPauloISO(nextDate.toISOString().slice(0, 10), '00:00'),
+      manicure.id,
+    ) || Array.from(memoryDb.agendamentos.values()).filter((booking) =>
+      booking.data_hora_inicio.startsWith(data) &&
+      (!booking.manicure_id || booking.manicure_id === manicure.id)
+    );
+  } catch (error) {
+    console.error('Falha ao carregar disponibilidade atualizada:', error);
+    return res.status(502).json({ error: 'Não foi possível verificar os horários disponíveis.' });
+  }
 
   const dayBlocks = Array.from(memoryDb.bloqueios.values()).filter((b) =>
     (!b.manicure_id || b.manicure_id === manicure.id) &&
@@ -317,7 +332,7 @@ app.get('/api/disponibilidade', (req, res) => {
 
 // Criar Agendamento (3º Passo) com Anti-Double-Booking e snapshots
 app.post('/api/agendamentos', async (req, res) => {
-  const { servicoId, data, horario, nomeCliente, whatsappCliente } = req.body;
+  const { servicoId, data, horario, nomeCliente, whatsappCliente, observacoes } = req.body;
   const manicure = resolveManicure(req);
   if (!manicure) return res.status(404).json({ error: 'Manicure não encontrada.' });
 
@@ -362,20 +377,30 @@ app.post('/api/agendamentos', async (req, res) => {
   const sEndWithBuffer = new Date(endISO).getTime() + bufferMin * 60000;
 
   const hasConflict = Array.from(memoryDb.agendamentos.values()).some((a) => {
-    if (a.status === 'cancelado') return false;
+    if (
+      a.status === 'cancelado' ||
+      (a.pagamento_status === 'aguardando' && a.expires_at && new Date(a.expires_at).getTime() <= Date.now()) ||
+      (a.manicure_id && a.manicure_id !== manicure.id)
+    ) return false;
     const aStart = new Date(a.data_hora_inicio).getTime();
     const aEndWithBuffer = new Date(a.data_hora_fim).getTime() + bufferMin * 60000;
     return sStart < aEndWithBuffer && sEndWithBuffer > aStart;
   });
 
-  if (hasConflict) {
+  if ((!supabaseClient || sinalPct === 0) && hasConflict) {
     return res.status(409).json({
       error: 'Este horário acabou de ser reservado por outra cliente. Por favor, escolha outro horário.',
     });
   }
 
   // Localiza ou cria cliente
-  let cliente = Array.from(memoryDb.clientes.values()).find((c) => c.whatsapp === phoneVal.clean);
+  let cliente: Cliente | undefined;
+  try {
+    cliente = (await getClienteByWhatsApp(phoneVal.clean)) || undefined;
+  } catch (error) {
+    console.error('Falha ao localizar cliente para reserva:', error);
+    return res.status(502).json({ error: 'Não foi possível preparar a reserva.' });
+  }
   const now = new Date().toISOString();
 
   if (cliente) {
@@ -389,9 +414,14 @@ app.post('/api/agendamentos', async (req, res) => {
       criado_em: now,
       atualizado_em: now,
     };
-    memoryDb.clientes.set(cliente.id, cliente);
   }
-  await persistCliente(cliente);
+  try {
+    await persistClienteOrThrow(cliente);
+    memoryDb.clientes.set(cliente.id, cliente);
+  } catch (error) {
+    console.error('Falha ao salvar cliente para reserva:', error);
+    return res.status(502).json({ error: 'Não foi possível salvar os dados da cliente.' });
+  }
 
   // Gera código sequencial NM-0001
   memoryDb.seqCounter += 1;
@@ -411,13 +441,41 @@ app.post('/api/agendamentos', async (req, res) => {
     preco_snapshot: servico.preco,
     valor_sinal: valorSinal,
     status: sinalPct === 0 ? 'confirmado' : 'pendente',
+    pagamento_status: sinalPct === 0 ? 'nao_requerido' : 'aguardando',
+    expires_at: null,
     sinal_confirmado: sinalPct === 0,
     estorno_elegivel: true,
+    observacoes,
     criado_em: now,
     atualizado_em: now,
   };
+
+  if (sinalPct > 0) {
+    try {
+      const reservation = await reservePixBooking(novoAgendamento, bufferMin);
+      if (!reservation.accepted || !reservation.expiresAt) {
+        return res.status(409).json({
+          error: 'Este horário acabou de ser reservado por outra cliente. Por favor, escolha outro horário.',
+        });
+      }
+      novoAgendamento.expires_at = reservation.expiresAt;
+      novoAgendamento.criado_em = new Date(
+        Date.parse(reservation.expiresAt) - 20 * 60 * 1000,
+      ).toISOString();
+    } catch (error) {
+      console.error('Falha ao criar reserva temporária Pix:', error);
+      return res.status(502).json({ error: 'Não foi possível reservar o horário temporariamente.' });
+    }
+  } else {
+    try {
+      await persistAgendamentoOrThrow(novoAgendamento);
+    } catch (error) {
+      console.error('Falha ao salvar agendamento:', error);
+      return res.status(502).json({ error: 'Não foi possível salvar o agendamento.' });
+    }
+  }
+
   memoryDb.agendamentos.set(agendamentoId, novoAgendamento);
-  await persistAgendamento(novoAgendamento);
 
   // Registra notificações simuladas
   const confirmationNotification: Notificacao = {
@@ -467,12 +525,47 @@ app.post('/api/agendamentos', async (req, res) => {
     valorSinal,
     sinalPct,
     chavePix,
+    createdAt: novoAgendamento.criado_em,
+    expiresAt: novoAgendamento.expires_at,
     agendamento: novoAgendamento,
   });
 });
 
+app.post('/api/agendamentos/:id/estado-pagamento', async (req, res) => {
+  const { nome, whatsapp } = req.body;
+  const phoneVal = validateWhatsApp(whatsapp || '');
+  if (!phoneVal.valid || !(nome || '').trim()) {
+    return res.status(400).json({ error: 'Informe o nome e o WhatsApp usados na reserva.' });
+  }
+
+  try {
+    await expirePixBookings();
+    const booking = await getAgendamentoById(req.params.id);
+    if (!booking) return res.status(404).json({ error: 'Reserva não encontrada.' });
+
+    const client = await getClienteByWhatsApp(phoneVal.clean);
+    if (
+      !client ||
+      client.id !== booking.cliente_id ||
+      client.nome.toLowerCase() !== nome.trim().toLowerCase()
+    ) {
+      return res.status(403).json({ error: 'Dados não correspondem à reserva.' });
+    }
+
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      status: booking.status,
+      pagamento_status: booking.pagamento_status,
+      expires_at: booking.expires_at,
+    });
+  } catch (error) {
+    console.error('Falha ao consultar estado do pagamento:', error);
+    res.status(502).json({ error: 'Não foi possível consultar o estado atualizado do pagamento.' });
+  }
+});
+
 // "Meus Horários" - Consulta de agendamentos por Nome + WhatsApp
-app.post('/api/meus-horarios', (req, res) => {
+app.post('/api/meus-horarios', async (req, res) => {
   const { nome, whatsapp } = req.body;
   const phoneVal = validateWhatsApp(whatsapp || '');
 
@@ -481,16 +574,25 @@ app.post('/api/meus-horarios', (req, res) => {
   }
 
   const cleanName = (nome || '').trim().toLowerCase();
-  const cliente = Array.from(memoryDb.clientes.values()).find(
-    (c) => c.whatsapp === phoneVal.clean && c.nome.toLowerCase() === cleanName
-  );
+  let cliente: Cliente | null;
+  let currentBookings: Agendamento[] | null;
+  try {
+    await expirePixBookings();
+    cliente = await getClienteByWhatsApp(phoneVal.clean);
+    currentBookings = cliente ? await listAgendamentosByCliente(cliente.id) : [];
+  } catch (error) {
+    console.error('Falha ao carregar agendamentos da cliente:', error);
+    return res.status(502).json({ error: 'Não foi possível carregar seus agendamentos atualizados.' });
+  }
 
-  if (!cliente) {
+  if (!cliente || cliente.nome.toLowerCase() !== cleanName) {
     return res.status(404).json({ error: 'Nenhum agendamento encontrado para este nome e WhatsApp.' });
   }
 
-  const items = Array.from(memoryDb.agendamentos.values())
+  const bookings = currentBookings || Array.from(memoryDb.agendamentos.values())
     .filter((a) => a.cliente_id === cliente.id)
+    .sort((a, b) => new Date(b.data_hora_inicio).getTime() - new Date(a.data_hora_inicio).getTime());
+  const items = bookings
     .map((a) => ({
       ...a,
       servico_nome: memoryDb.servicos.get(a.servico_id)?.nome || 'Serviço',
@@ -503,7 +605,7 @@ app.post('/api/meus-horarios', (req, res) => {
 });
 
 // Cancelamento pelo Cliente com Regra de 24h
-app.post('/api/agendamentos/:id/cancelar-cliente', (req, res) => {
+app.post('/api/agendamentos/:id/cancelar-cliente', async (req, res) => {
   const { id } = req.params;
   const { nome, whatsapp } = req.body;
 
@@ -512,13 +614,28 @@ app.post('/api/agendamentos/:id/cancelar-cliente', (req, res) => {
     return res.status(400).json({ error: 'WhatsApp inválido.' });
   }
 
-  const ag = memoryDb.agendamentos.get(id);
+  let ag: Agendamento | null;
+  try {
+    ag = await getAgendamentoById(id);
+  } catch (error) {
+    console.error('Falha ao carregar agendamento para cancelamento:', error);
+    return res.status(502).json({ error: 'Não foi possível carregar o agendamento.' });
+  }
   if (!ag) {
     return res.status(404).json({ error: 'Agendamento não encontrado.' });
   }
 
-  const cliente = memoryDb.clientes.get(ag.cliente_id);
+  let cliente: Cliente | null;
+  try {
+    cliente = await getClienteByWhatsApp(phoneVal.clean);
+  } catch (error) {
+    console.error('Falha ao validar cliente para cancelamento:', error);
+    return res.status(502).json({ error: 'Não foi possível validar seus dados.' });
+  }
   if (!cliente || cliente.whatsapp !== phoneVal.clean || cliente.nome.toLowerCase() !== (nome || '').trim().toLowerCase()) {
+    return res.status(403).json({ error: 'Não autorizado. Nome e WhatsApp não coincidem com o agendamento.' });
+  }
+  if (cliente.id !== ag.cliente_id) {
     return res.status(403).json({ error: 'Não autorizado. Nome e WhatsApp não coincidem com o agendamento.' });
   }
 
@@ -529,10 +646,20 @@ app.post('/api/agendamentos/:id/cancelar-cliente', (req, res) => {
   const refundCheck = checkRefundEligibility(ag.data_hora_inicio, getNowInSaoPaulo(), 24);
   const now = new Date().toISOString();
 
-  ag.status = 'cancelado';
-  ag.estorno_elegivel = Number(ag.valor_sinal) > 0 && refundCheck.eligible;
-  ag.atualizado_em = now;
-  void persistAgendamento(ag);
+  const cancelledBooking: Agendamento = {
+    ...ag,
+    status: 'cancelado',
+    pagamento_status: ag.pagamento_status === 'aguardando' ? 'expirado' : ag.pagamento_status,
+    estorno_elegivel: Number(ag.valor_sinal) > 0 && refundCheck.eligible,
+    atualizado_em: now,
+  };
+  try {
+    await persistAgendamentoOrThrow(cancelledBooking);
+    memoryDb.agendamentos.set(id, cancelledBooking);
+  } catch (error) {
+    console.error('Falha ao salvar cancelamento do agendamento:', error);
+    return res.status(502).json({ error: 'Não foi possível cancelar o agendamento.' });
+  }
 
   // Notificação simulada de cancelamento
   memoryDb.notificacoes.set(`notif-${Date.now()}-canc`, {
@@ -883,15 +1010,42 @@ app.patch('/api/admin/agendamentos/:id/status', requireAdmin, async (req, res) =
     if (!ag) return res.status(404).json({ error: 'Agendamento não encontrado.' });
     if (!isInAdminScope(req, ag.manicure_id)) return res.status(403).json({ error: 'Agendamento fora do seu perfil.' });
 
+    if (status === 'confirmado' && ag.pagamento_status === 'aguardando') {
+      const confirmed = await confirmPixBooking(id);
+      if (!confirmed) {
+        await expirePixBookings();
+        return res.status(410).json({ error: 'A reserva não pode mais ser confirmada; o prazo do Pix expirou ou ela já foi encerrada.' });
+      }
+      return res.json({ success: true, agendamento: confirmed });
+    }
+
+    const now = new Date();
+    if (
+      ag.pagamento_status === 'aguardando' &&
+      ag.expires_at &&
+      new Date(ag.expires_at).getTime() <= now.getTime()
+    ) {
+      await expirePixBookings();
+      return res.status(410).json({ error: 'O prazo do Pix expirou; a reserva foi liberada.' });
+    }
+
     const updatedAgendamento: Agendamento = {
       ...ag,
       status: status ?? ag.status,
+      pagamento_status: status === 'confirmado' && ag.pagamento_status === 'aguardando'
+        ? 'confirmado'
+        : status === 'cancelado' && ag.pagamento_status === 'aguardando'
+          ? 'expirado'
+          : ag.pagamento_status,
+      pagamento_confirmado_em: status === 'confirmado' && ag.pagamento_status === 'aguardando'
+        ? now.toISOString()
+        : ag.pagamento_confirmado_em,
       sinal_confirmado: status === 'confirmado'
         ? true
         : typeof sinal_confirmado === 'boolean'
           ? sinal_confirmado
           : ag.sinal_confirmado,
-      atualizado_em: new Date().toISOString(),
+      atualizado_em: now.toISOString(),
     };
 
     await persistAgendamentoOrThrow(updatedAgendamento);

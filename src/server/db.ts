@@ -56,6 +56,9 @@ export interface Agendamento {
   preco_snapshot: number;
   valor_sinal: number;
   status: 'pendente' | 'confirmado' | 'concluido' | 'cancelado' | 'falta';
+  pagamento_status?: 'nao_requerido' | 'aguardando' | 'confirmado' | 'expirado';
+  expires_at?: string | null;
+  pagamento_confirmado_em?: string | null;
   sinal_confirmado: boolean;
   estorno_elegivel: boolean;
   observacoes?: string;
@@ -318,6 +321,53 @@ export async function getAgendamentoById(id: string): Promise<Agendamento | null
   return data as Agendamento | null;
 }
 
+export async function getClienteByWhatsApp(whatsapp: string): Promise<Cliente | null> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    return Array.from(memoryDb.clientes.values()).find((cliente) => cliente.whatsapp === whatsapp) || null;
+  }
+
+  const { data, error } = await supabaseClient
+    .from('clientes')
+    .select('*')
+    .eq('whatsapp', whatsapp)
+    .maybeSingle();
+  if (error) throw new Error(`Supabase client lookup failed: ${error.message}`);
+  return data as Cliente | null;
+}
+
+export async function persistClienteOrThrow(value: Cliente): Promise<void> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    return;
+  }
+  const { error } = await supabaseClient.from('clientes').upsert(value);
+  if (error) {
+    throw new Error(`Supabase client upsert failed: ${error.message}`);
+  }
+}
+
+export async function listAgendamentosByCliente(clienteId: string): Promise<Agendamento[] | null> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    return null;
+  }
+
+  const { data, error } = await supabaseClient
+    .from('agendamentos')
+    .select('*')
+    .eq('cliente_id', clienteId)
+    .order('data_hora_inicio', { ascending: false });
+  if (error) throw new Error(`Supabase client bookings read failed: ${error.message}`);
+  return data as Agendamento[];
+}
+
 export async function listAgendamentosInRange(
   startISO: string,
   endISO: string,
@@ -344,6 +394,114 @@ export async function listAgendamentosInRange(
     throw new Error(`Supabase agendamentos range read failed: ${error.message}`);
   }
   return data as Agendamento[];
+}
+
+export async function reservePixBooking(
+  booking: Agendamento,
+  bufferMinutes: number,
+): Promise<{ accepted: boolean; expiresAt: string | null }> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    return {
+      accepted: true,
+      expiresAt: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+    };
+  }
+
+  const { data, error } = await supabaseClient.rpc('reserve_pix_booking', {
+    p_id: booking.id,
+    p_codigo: booking.codigo,
+    p_cliente_id: booking.cliente_id,
+    p_servico_id: booking.servico_id,
+    p_manicure_id: booking.manicure_id,
+    p_data_hora_inicio: booking.data_hora_inicio,
+    p_data_hora_fim: booking.data_hora_fim,
+    p_duracao_snapshot: booking.duracao_snapshot,
+    p_preco_snapshot: booking.preco_snapshot,
+    p_valor_sinal: booking.valor_sinal,
+    p_estorno_elegivel: booking.estorno_elegivel,
+    p_observacoes: booking.observacoes || null,
+    p_buffer_minutos: bufferMinutes,
+  });
+  if (error) {
+    throw new Error(`Supabase temporary reservation failed: ${error.message}`);
+  }
+
+  const result = Array.isArray(data) ? data[0] : data;
+  return {
+    accepted: Boolean(result?.accepted),
+    expiresAt: result?.expires_at || null,
+  };
+}
+
+export async function confirmPixBooking(id: string): Promise<Agendamento | null> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    const booking = memoryDb.agendamentos.get(id);
+    if (
+      !booking ||
+      booking.status !== 'pendente' ||
+      booking.pagamento_status !== 'aguardando' ||
+      !booking.expires_at ||
+      new Date(booking.expires_at).getTime() <= Date.now()
+    ) return null;
+
+    const confirmed: Agendamento = {
+      ...booking,
+      status: 'confirmado',
+      sinal_confirmado: true,
+      pagamento_status: 'confirmado',
+      pagamento_confirmado_em: new Date().toISOString(),
+      atualizado_em: new Date().toISOString(),
+    };
+    memoryDb.agendamentos.set(id, confirmed);
+    return confirmed;
+  }
+
+  const { data, error } = await supabaseClient.rpc('confirm_pix_booking', {
+    p_booking_id: id,
+  });
+  if (error) {
+    throw new Error(`Supabase Pix confirmation failed: ${error.message}`);
+  }
+  const confirmed = (data || [])[0] as Agendamento | undefined;
+  if (confirmed) memoryDb.agendamentos.set(id, confirmed);
+  return confirmed || null;
+}
+
+export async function expirePixBookings(): Promise<Agendamento[]> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    const now = Date.now();
+    const expired = Array.from(memoryDb.agendamentos.values()).filter((booking) =>
+      booking.pagamento_status === 'aguardando' &&
+      booking.expires_at &&
+      new Date(booking.expires_at).getTime() <= now &&
+      booking.status === 'pendente'
+    );
+    const updated = expired.map((booking): Agendamento => ({
+      ...booking,
+      status: 'cancelado',
+      pagamento_status: 'expirado',
+      atualizado_em: new Date().toISOString(),
+    }));
+    updated.forEach((booking) => memoryDb.agendamentos.set(booking.id, booking));
+    return updated;
+  }
+
+  const { data, error } = await supabaseClient.rpc('expire_pix_bookings');
+  if (error) {
+    throw new Error(`Supabase Pix reservation expiry failed: ${error.message}`);
+  }
+  const expired = (data || []) as Agendamento[];
+  expired.forEach((booking) => memoryDb.agendamentos.set(booking.id, booking));
+  return expired;
 }
 
 export async function waivePendingNovemberDeposits(): Promise<void> {

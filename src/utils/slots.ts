@@ -11,6 +11,8 @@ export interface BookingInterval {
   data_hora_inicio: string; // ISO
   data_hora_fim: string;    // ISO
   status: string;           // "pendente", "confirmado", "cancelado", etc.
+  pagamento_status?: string;
+  expires_at?: string | null;
 }
 
 export interface BlockInterval {
@@ -96,7 +98,14 @@ export function calculateAvailableSlots(params: {
   }
 
   // 3. Filtrar agendamentos ativos do dia
-  const activeBookings = existingBookings.filter((b) => b.status !== 'cancelado');
+  const activeBookings = existingBookings.filter((booking) =>
+    booking.status !== 'cancelado' &&
+    !(
+      booking.pagamento_status === 'aguardando' &&
+      booking.expires_at &&
+      new Date(booking.expires_at).getTime() <= nowReference.getTime()
+    )
+  );
 
   // 4. Analisar horários de abertura e fechamento em minutos
   const [startHour, startMin] = dayConfig.inicio.split(':').map(Number);
@@ -114,9 +123,8 @@ export function calculateAvailableSlots(params: {
     const slotStartMinTotal = openMinutes + m;
     const slotEndMinTotal = slotStartMinTotal + serviceDurationMinutes;
 
-    // Regra: Não pode ultrapassar o horário de fechamento
-    // (ex: serviço de 120min às 17h quando fecha às 18h é RECUSADO)
-    if (slotEndMinTotal > closeMinutes) {
+    // O horário de fechamento também pode ser escolhido como início do último atendimento.
+    if (slotStartMinTotal !== closeMinutes && slotEndMinTotal > closeMinutes) {
       continue;
     }
 
