@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots, BusinessHoursMap } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor, getDepositPercentageForDate } from './src/utils/rules.js';
@@ -25,9 +25,12 @@ app.use(cookieParser());
 let configInitialization: Promise<void> | null = null;
 function ensureConfigLoaded(): Promise<void> {
   if (!configInitialization) {
-    configInitialization = loadSupabaseConfig().then(() => hydrateSupabaseData()).catch((error) => {
-      console.error(error);
-    });
+    configInitialization = loadSupabaseConfig()
+      .then(() => hydrateSupabaseData())
+      .then(() => waivePendingNovemberDeposits())
+      .catch((error) => {
+        console.error(error);
+      });
   }
   return configInitialization;
 }

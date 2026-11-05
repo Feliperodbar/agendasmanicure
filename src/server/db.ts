@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+import { getDepositPercentageForDate } from '../utils/rules.js';
 import { DEFAULT_BUSINESS_HOURS } from '../utils/slots.js';
 
 export interface Manicure {
@@ -295,6 +296,28 @@ export async function persistAgendamentoOrThrow(value: Agendamento): Promise<voi
   const { error } = await supabaseClient.from('agendamentos').upsert(value);
   if (error) {
     throw new Error(`Supabase agendamentos upsert failed: ${error.message}`);
+  }
+}
+
+export async function waivePendingNovemberDeposits(): Promise<void> {
+  const now = Date.now();
+  const pendingBookings = Array.from(memoryDb.agendamentos.values()).filter((booking) =>
+    booking.status === 'pendente' &&
+    !booking.sinal_confirmado &&
+    new Date(booking.data_hora_inicio).getTime() > now &&
+    getDepositPercentageForDate(booking.data_hora_inicio) === 0
+  );
+
+  for (const booking of pendingBookings) {
+    const updatedBooking: Agendamento = {
+      ...booking,
+      valor_sinal: 0,
+      status: 'confirmado',
+      sinal_confirmado: true,
+      atualizado_em: new Date().toISOString(),
+    };
+    await persistAgendamentoOrThrow(updatedBooking);
+    memoryDb.agendamentos.set(updatedBooking.id, updatedBooking);
   }
 }
 

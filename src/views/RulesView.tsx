@@ -5,11 +5,11 @@ import { ShieldCheck, Clock, RefreshCw, AlertOctagon } from 'lucide-react';
 export function RulesView() {
   const rules = [
     {
-      titulo: '1. Sinal Obrigatório de 50%',
+      titulo: '1. Sinal de 50% (dispensado em novembro)',
       gatilho: 'Cliente seleciona serviço e conclui passo 3 do agendamento.',
-      condicoes: 'Horário e data livres, anti-double-booking validado no servidor.',
-      acoes: 'Gera código sequencial NM-####. Agendamento nasce com status "pendente". Quando a manicure confirma o recebimento do Pix, o status vira "confirmado".',
-      responsavel: 'Cliente (envio do Pix) / Manicure (confirmação no admin)',
+      condicoes: 'Em novembro não há cobrança antecipada. Em dezembro e nos demais meses, aplica-se o percentual de sinal configurado.',
+      acoes: 'Gera código sequencial NM-####. Agendamentos sem sinal são confirmados automaticamente; quando há sinal, ficam pendentes até a manicure confirmar o Pix.',
+      responsavel: 'Sistema / Cliente (envio do Pix) / Manicure (confirmação no admin)',
       icon: ShieldCheck,
     },
     {

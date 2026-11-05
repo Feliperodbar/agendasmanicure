@@ -1,7 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { PhoneInput } from '../components/PhoneInput';
 import { Header } from '../components/Header';
-import { getNowInSaoPaulo, toSaoPauloISO } from '../utils/timezone';
+import { getNowInSaoPaulo, SEASONAL_WARNING_MESSAGE, toSaoPauloISO } from '../utils/timezone';
+import { calculateDeposit, getDepositPercentageForDate } from '../utils/rules';
 import { Clock, CheckCircle2, ChevronRight, AlertCircle, Copy, Check } from 'lucide-react';
 import type { Manicure } from '../types';
 
@@ -49,6 +50,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
   const [bookingResult, setBookingResult] = useState<{
     codigo: string;
     valorSinal: number;
+    sinalPct: number;
     chavePix: string;
   } | null>(null);
 
@@ -170,6 +172,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
       setBookingResult({
         codigo: dataRes.codigo,
         valorSinal: dataRes.valorSinal,
+        sinalPct: dataRes.sinalPct,
         chavePix: dataRes.chavePix,
       });
       setStep(4);
@@ -218,6 +221,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
 
   const stepLabels = ['Serviço', 'Data e horário', 'Seus dados'];
   const formatMoney = (value: number) => `R$ ${Number(value).toFixed(2).replace('.', ',')}`;
+  const sinalPct = getDepositPercentageForDate(date);
   const morningSlots = slots.filter((slot) => Number(slot.time.slice(0, 2)) < 12);
   const afternoonSlots = slots.filter((slot) => Number(slot.time.slice(0, 2)) >= 12);
 
@@ -260,10 +264,13 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
             Escolha seu serviço
           </h2>
 
+          <div role="note" className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-xs text-amber-950 leading-relaxed">
+            <strong>Regra de sinal:</strong> agendamentos em novembro não exigem sinal antecipado. Em dezembro, permanece o sinal de 50%.
+          </div>
+
           <div className="bg-white rounded-2xl border border-pink-200/80 divide-y divide-pink-100 overflow-hidden shadow-2xs">
             {services.map((srv) => {
               const dotColor = SERVICE_DOT_COLORS[srv.nome] || '#802334';
-              const sinalCalc = (srv.preco * 0.5).toFixed(2).replace('.', ',');
               const precoFormatado = Number(srv.preco).toFixed(2).replace('.', ',');
 
               return (
@@ -281,7 +288,9 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
                     <div>
                       <h3 className="font-heading font-extrabold text-base text-[#1a1012]">{srv.nome}</h3>
                       <p className="text-xs text-gray-500 font-medium mt-0.5">
-                        {srv.duracao_minutos} min • sinal de 50%: R$ {sinalCalc}
+                        {sinalPct === 0
+                          ? `${srv.duracao_minutos} min • sem sinal em novembro`
+                          : `${srv.duracao_minutos} min • sinal de ${sinalPct}%: ${formatMoney(calculateDeposit(srv.preco, sinalPct))}`}
                       </p>
                       {srv.descricao && <p className="mt-1 text-[11px] text-gray-500">{srv.descricao}</p>}
                     </div>
@@ -432,7 +441,12 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
               <span>Manicure</span><strong>{manicure?.name || 'Manicure'}</strong>
               <span>Serviço</span><strong>{selectedService.nome}</strong>
               <span>Data e horário</span><strong>{formatDateForDisplay(date)} às {selectedSlot}</strong>
-              <span>Total / sinal</span><strong>{formatMoney(selectedService.preco)} / {formatMoney(selectedService.preco * 0.5)}</strong>
+              <span>Total / sinal</span>
+              <strong>
+                {formatMoney(selectedService.preco)} / {sinalPct === 0
+                  ? 'não exigido em novembro'
+                  : formatMoney(calculateDeposit(selectedService.preco, sinalPct))}
+              </strong>
             </div>
           </div>
 
@@ -478,9 +492,8 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
 
           {/* Yellow Seasonal Banner Inside Form */}
           <div className="bg-[#FFFDE7] border border-[#FACC15] rounded-2xl p-3.5 text-xs text-gray-800 leading-relaxed shadow-2xs">
-            <span className="font-extrabold text-gray-900">Atenção — novembro e dezembro:</span>{' '}
-            em caso de falta ou de cancelamento com menos de 24 horas de antecedência, o pagamento antecipado{' '}
-            <strong className="font-bold text-gray-900">não será estornado</strong>.
+            <span className="font-extrabold text-gray-900">Atenção — regra de sinal:</span>{' '}
+            {SEASONAL_WARNING_MESSAGE}
           </div>
 
           <p className="text-[11px] text-gray-500 font-medium text-center leading-normal">
@@ -515,35 +528,46 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
           </div>
 
           <h2 id="sucesso-heading" className="font-heading font-extrabold text-2xl text-gray-900 tracking-tight">
-            Pré-agendamento Criado!
+            {bookingResult.sinalPct === 0 ? 'Agendamento Confirmado!' : 'Pré-agendamento Criado!'}
           </h2>
 
           <div className="inline-block bg-gray-100 border border-gray-200 px-4 py-1.5 rounded-full font-heading font-extrabold text-lg text-gray-900 tracking-wide">
             {bookingResult.codigo}
           </div>
 
-          <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-3xl text-left space-y-3 shadow-sm">
-            <span className="text-[11px] font-extrabold text-amber-900 uppercase tracking-wider block">
-              Garantia do Horário (Sinal de 50%)
-            </span>
+          {bookingResult.sinalPct === 0 ? (
+            <div className="p-4 bg-emerald-50 border-2 border-emerald-200 rounded-3xl text-left space-y-2">
+              <span className="text-[11px] font-extrabold text-emerald-900 uppercase tracking-wider block">
+                Nenhum sinal antecipado necessário
+              </span>
+              <p className="text-sm font-semibold text-gray-900 leading-relaxed">
+                Seu horário está confirmado. Para agendamentos em dezembro, permanece o sinal de 50%.
+              </p>
+            </div>
+          ) : (
+            <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-3xl text-left space-y-3 shadow-sm">
+              <span className="text-[11px] font-extrabold text-amber-900 uppercase tracking-wider block">
+                Garantia do Horário (Sinal de {bookingResult.sinalPct}%)
+              </span>
 
-            <p className="text-sm font-semibold text-gray-900 leading-relaxed">
-              Para garantir o horário, o pagamento antecipado é de 50%: <strong className="font-heading font-extrabold text-base text-gray-900">R$ {Number(bookingResult.valorSinal).toFixed(2).replace('.', ',')}</strong> — Enviar o pix para a chave: <span className="font-heading font-bold text-[#802334] select-all bg-amber-100/90 px-1.5 py-0.5 rounded-md border border-amber-200">{bookingResult.chavePix}</span>
-            </p>
+              <p className="text-sm font-semibold text-gray-900 leading-relaxed">
+                Para garantir o horário, o pagamento antecipado é de {bookingResult.sinalPct}%: <strong className="font-heading font-extrabold text-base text-gray-900">{formatMoney(bookingResult.valorSinal)}</strong> — Enviar o pix para a chave: <span className="font-heading font-bold text-[#802334] select-all bg-amber-100/90 px-1.5 py-0.5 rounded-md border border-amber-200">{bookingResult.chavePix}</span>
+              </p>
 
-            <button
-              type="button"
-              onClick={copyPixKey}
-              className="w-full h-11 bg-white border border-amber-300 hover:bg-amber-100/40 rounded-xl font-bold text-xs text-amber-950 flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-            >
-              {copiedPix ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} />}
-              {copiedPix ? 'Chave Pix copiada!' : 'Copiar Chave Pix'}
-            </button>
+              <button
+                type="button"
+                onClick={copyPixKey}
+                className="w-full h-11 bg-white border border-amber-300 hover:bg-amber-100/40 rounded-xl font-bold text-xs text-amber-950 flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+              >
+                {copiedPix ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} />}
+                {copiedPix ? 'Chave Pix copiada!' : 'Copiar Chave Pix'}
+              </button>
 
-            <p className="text-[11px] text-gray-600 leading-normal">
-              Envie o comprovante para o WhatsApp de Natália Marcela. Seu horário fica pré-reservado e é confirmado pela manicure assim que o sinal for identificado.
-            </p>
-          </div>
+              <p className="text-[11px] text-gray-600 leading-normal">
+                Envie o comprovante para o WhatsApp de Natália Marcela. Seu horário fica pré-reservado e é confirmado pela manicure assim que o sinal for identificado.
+              </p>
+            </div>
+          )}
 
           <div className="pt-2 space-y-2">
             <button

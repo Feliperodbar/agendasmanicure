@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { PhoneInput } from '../components/PhoneInput';
 import { Header } from '../components/Header';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { formatInSaoPaulo } from '../utils/timezone';
+import { formatInSaoPaulo, SEASONAL_WARNING_MESSAGE } from '../utils/timezone';
 import { Calendar, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface ClientMyBookingsViewProps {
@@ -101,6 +101,9 @@ export function ClientMyBookingsView({ mode, onModeChange }: ClientMyBookingsVie
         <p className="text-xs text-gray-600 font-medium leading-relaxed">
           Digite o <strong className="font-bold text-gray-900">mesmo nome e WhatsApp</strong> usados ao agendar. Só os seus aparecem.
         </p>
+        <p role="note" className="text-xs text-amber-950 bg-amber-50 border border-amber-200 rounded-2xl p-3 leading-relaxed">
+          <strong>Atenção — regra de sinal:</strong> {SEASONAL_WARNING_MESSAGE}
+        </p>
 
         {errorMsg && (
           <div role="alert" className="p-3.5 bg-red-50 border border-red-200 text-red-800 rounded-2xl text-xs font-semibold flex items-center gap-2">
@@ -166,7 +169,8 @@ export function ClientMyBookingsView({ mode, onModeChange }: ClientMyBookingsVie
             ) : (
               bookings.map((b) => {
                 const isCancelado = b.status === 'cancelado';
-                const isPendente = b.status === 'pendente' || !b.sinal_confirmado;
+                const hasDeposit = Number(b.valor_sinal) > 0;
+                const isPendente = hasDeposit && (b.status === 'pendente' || !b.sinal_confirmado);
 
                 return (
                   <div key={b.id} className="p-4 rounded-3xl border border-pink-200/80 bg-white space-y-2.5 shadow-2xs">
@@ -205,16 +209,24 @@ export function ClientMyBookingsView({ mode, onModeChange }: ClientMyBookingsVie
                     <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-600">
                       <span>Total: R$ {Number(b.preco_snapshot).toFixed(2).replace('.', ',')}</span>
                       <span className="font-semibold text-gray-800">
-                        Sinal (50%): R$ {Number(b.valor_sinal).toFixed(2).replace('.', ',')} ({b.sinal_confirmado ? 'Confirmado' : 'Pendente'})
+                        {hasDeposit
+                          ? `Sinal antecipado: R$ ${Number(b.valor_sinal).toFixed(2).replace('.', ',')} (${b.sinal_confirmado ? 'Confirmado' : 'Pendente'})`
+                          : 'Sinal não exigido'}
                       </span>
                     </div>
 
                     {isCancelado && (
                       <div className="pt-1 text-[11px] font-semibold text-gray-500">
-                        Status de estorno:{' '}
-                        <strong className={b.estorno_elegivel ? 'text-emerald-700' : 'text-red-700'}>
-                          {b.estorno_elegivel ? 'Elegível para estorno (>= 24h)' : 'Sem estorno (< 24h)'}
-                        </strong>
+                        {hasDeposit ? (
+                          <>
+                            Status de estorno:{' '}
+                            <strong className={b.estorno_elegivel ? 'text-emerald-700' : 'text-red-700'}>
+                              {b.estorno_elegivel ? 'Elegível para estorno (>= 24h)' : 'Sem estorno (< 24h)'}
+                            </strong>
+                          </>
+                        ) : (
+                          'Nenhum sinal antecipado foi cobrado; não há estorno.'
+                        )}
                       </div>
                     )}
 
@@ -244,7 +256,7 @@ export function ClientMyBookingsView({ mode, onModeChange }: ClientMyBookingsVie
       <ConfirmDialog
         isOpen={cancelModalOpen}
         title="Cancelar agendamento?"
-        message="Atenção: o cancelamento libera o horário imediatamente para a lista de espera. Conforme as regras, cancelamentos com mais de 24h têm direito ao estorno do sinal; com menos de 24h, o sinal não é estornado."
+        message="Atenção: o cancelamento libera o horário imediatamente para a lista de espera. Quando houver sinal, cancelamentos com mais de 24h têm direito a estorno; com menos de 24h, o valor não é estornado."
         confirmLabel="Sim, confirmar cancelamento"
         cancelLabel="Voltar"
         isDestructive={true}

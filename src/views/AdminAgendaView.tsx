@@ -3,6 +3,7 @@ import { Header } from '../components/Header';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { PhoneInput } from '../components/PhoneInput';
 import { formatInSaoPaulo } from '../utils/timezone';
+import { getDepositPercentageForDate } from '../utils/rules';
 import {
   ChevronLeft,
   ChevronRight,
@@ -56,6 +57,8 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
+  const manualDate = `${year}-${String(month).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
+  const manualDepositPercentage = getDepositPercentageForDate(manualDate);
 
   const handleAdminResponse = (res: Response): boolean => {
     if (res.status === 401) {
@@ -241,7 +244,9 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
   // 3. NO DIA* (soma de confirmados + concluídos do dia selecionado)
   const activeDayBookings = dayBookings.filter((b) => b.status !== 'cancelado');
   const countNoDia = activeDayBookings.length;
-  const countPendentes = activeDayBookings.filter((b) => b.status === 'pendente' || !b.sinal_confirmado).length;
+  const countPendentes = activeDayBookings.filter((b) =>
+    Number(b.valor_sinal) > 0 && (b.status === 'pendente' || !b.sinal_confirmado)
+  ).length;
   const sumRevenueNoDia = activeDayBookings
     .filter((b) => b.status === 'confirmado' || b.status === 'concluido')
     .reduce((acc, b) => acc + Number(b.preco_snapshot || 0), 0);
@@ -416,11 +421,11 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
         <div className="space-y-1.5 pt-2.5 border-t border-pink-100 text-[11px] font-medium text-gray-600">
           <div className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-md bg-[#00B87C] inline-block" />
-            <span><strong className="font-bold text-gray-900">Verde</strong> = com agendamentos (sinal ok)</span>
+            <span><strong className="font-bold text-gray-900">Verde</strong> = agendamentos sem pendências</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-md bg-[#F97316] inline-block" />
-            <span><strong className="font-bold text-gray-900">Laranja</strong> = agendamento sem o sinal de 50%</span>
+            <span><strong className="font-bold text-gray-900">Laranja</strong> = agendamento aguardando sinal</span>
           </div>
         </div>
       </section>
@@ -467,7 +472,8 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
         ) : (
           <div className="space-y-2.5">
             {activeDayBookings.map((b) => {
-              const isPendente = b.status === 'pendente' || !b.sinal_confirmado;
+              const hasDeposit = Number(b.valor_sinal) > 0;
+              const isPendente = hasDeposit && (b.status === 'pendente' || !b.sinal_confirmado);
 
               return (
                 <div key={b.id} className="p-4 bg-white rounded-3xl border border-pink-200/80 space-y-2.5 shadow-2xs">
@@ -510,9 +516,15 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
                   </div>
 
                   <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-                    <span>Sinal 50%: R$ {Number(b.valor_sinal).toFixed(2).replace('.', ',')}</span>
+                    <span>
+                      {hasDeposit
+                        ? `Sinal antecipado: R$ ${Number(b.valor_sinal).toFixed(2).replace('.', ',')}`
+                        : 'Sinal não exigido'}
+                    </span>
                     <span className="font-semibold text-gray-700">
-                      {b.sinal_confirmado ? '✓ Sinal Identificado' : 'Aguardando Comprovante'}
+                      {hasDeposit
+                        ? b.sinal_confirmado ? '✓ Sinal Identificado' : 'Aguardando Comprovante'
+                        : 'Dispensado em novembro'}
                     </span>
                   </div>
 
@@ -706,14 +718,20 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
 
               <div>
                 <label className="text-xs font-bold text-gray-700 block mb-1">Status Inicial</label>
-                <select
-                  value={manualStatus}
-                  onChange={(e: any) => setManualStatus(e.target.value)}
-                  className="w-full h-11 px-3 border border-gray-200 rounded-xl text-xs font-semibold bg-white"
-                >
-                  <option value="confirmado">Confirmado (Sinal OK)</option>
-                  <option value="pendente">Pendente (Sem sinal)</option>
-                </select>
+                {manualDepositPercentage === 0 ? (
+                  <p className="text-xs text-emerald-800 bg-emerald-50 rounded-xl p-3">
+                    Sem sinal em novembro; o agendamento será confirmado automaticamente.
+                  </p>
+                ) : (
+                  <select
+                    value={manualStatus}
+                    onChange={(e: any) => setManualStatus(e.target.value)}
+                    className="w-full h-11 px-3 border border-gray-200 rounded-xl text-xs font-semibold bg-white"
+                  >
+                    <option value="confirmado">Confirmado (Sinal OK)</option>
+                    <option value="pendente">Pendente (Sem sinal)</option>
+                  </select>
+                )}
               </div>
             </div>
 
