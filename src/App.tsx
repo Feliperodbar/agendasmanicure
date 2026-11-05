@@ -16,6 +16,7 @@ export default function App() {
   const [clientTab, setClientTab] = useState<ClientTab>('agendar');
   const [adminTab, setAdminTab] = useState<AdminTab>('agenda');
   const [manicures, setManicures] = useState<Manicure[]>([]);
+  const [selectedManicure, setSelectedManicure] = useState<Manicure | null>(null);
 
   // Ao carregar, verifica se já existe sessão de admin ativa
   useEffect(() => {
@@ -32,7 +33,11 @@ export default function App() {
   useEffect(() => {
     fetch('/api/manicures')
       .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setManicures(Array.isArray(data) ? data : []))
+      .then((data) => {
+        const profiles = Array.isArray(data) ? data : [];
+        setManicures(profiles);
+        setSelectedManicure(profiles[0] || null);
+      })
       .catch(() => {});
   }, []);
 
@@ -53,11 +58,33 @@ export default function App() {
         {/* LADO DA CLIENTE */}
         {mode === 'client' && (
           <div className="flex-1">
+            {manicures.length > 1 && (
+              <div className="px-4 pt-3">
+                <label htmlFor="manicure-select" className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1.5">
+                  Escolha a manicure
+                </label>
+                <select
+                  id="manicure-select"
+                  value={selectedManicure?.id || ''}
+                  onChange={(event) => {
+                    const profile = manicures.find((item) => item.id === event.target.value);
+                    setSelectedManicure(profile || null);
+                  }}
+                  className="w-full h-11 rounded-xl border border-pink-200 px-3 text-sm font-semibold"
+                >
+                  {manicures.map((profile) => (
+                    <option key={profile.id} value={profile.id}>{profile.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {clientTab === 'agendar' && (
               <ClientBookingView
+                key={selectedManicure?.id || 'natalia'}
                 onGoToMyBookings={() => setClientTab('meus-horarios')}
                 mode={mode}
                 onModeChange={(m) => setMode(m)}
+                manicureSlug={selectedManicure?.slug || 'natalia'}
               />
             )}
             {clientTab === 'meus-horarios' && (

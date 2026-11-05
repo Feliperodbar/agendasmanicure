@@ -73,6 +73,11 @@ function toPublicManicure(m: Manicure) {
   return { id: m.id, slug: m.slug, name: m.name, instagram: m.instagram, photo_url: m.photo_url };
 }
 
+function resolveManicure(req: Request): Manicure | null {
+  const slug = typeof req.query.manicure === 'string' ? req.query.manicure : 'natalia';
+  return Array.from(memoryDb.manicures.values()).find((item) => item.active && item.slug === slug) || null;
+}
+
 app.get('/api/manicures', (_req, res) => {
   const manicures = Array.from(memoryDb.manicures.values())
     .filter((m) => m.active)
@@ -133,12 +138,28 @@ app.post('/api/admin/manicures', requireAdmin, async (req, res) => {
   };
   await persistManicure(manicure);
   memoryDb.manicures.set(manicure.id, manicure);
+  const defaultServices = Array.from(memoryDb.servicos.values()).filter((service) =>
+    !service.manicure_id || service.manicure_id === memoryDb.manicures.get('default-manicure')?.id
+  );
+  for (const service of defaultServices) {
+    const copy: Servico = {
+      ...service,
+      id: crypto.randomUUID(),
+      manicure_id: manicure.id,
+      criado_em: now,
+      atualizado_em: now,
+    };
+    memoryDb.servicos.set(copy.id, copy);
+    await persistServico(copy);
+  }
   res.status(201).json(toPublicManicure(manicure));
 });
 // Catálogo de serviços ativos
 app.get('/api/servicos', (req, res) => {
+  const manicure = resolveManicure(req);
+  if (!manicure) return res.status(404).json({ error: 'Manicure não encontrada.' });
   const servicos = Array.from(memoryDb.servicos.values())
-    .filter((s) => s.ativo)
+    .filter((s) => s.ativo && (!s.manicure_id || s.manicure_id === manicure.id))
     .sort((a, b) => a.ordem - b.ordem);
   res.json(servicos);
 });
@@ -163,17 +184,22 @@ app.get('/api/disponibilidade', (req, res) => {
   if (!servico) {
     return res.status(404).json({ error: 'Serviço não encontrado.' });
   }
+  const manicure = resolveManicure(req);
+  if (!manicure || (servico.manicure_id && servico.manicure_id !== manicure.id)) {
+    return res.status(404).json({ error: 'Manicure ou serviço não encontrado.' });
+  }
 
   const hoursConfig = memoryDb.configuracoes.get('horarios_funcionamento')?.valor;
   const bufferMinutes = Number(memoryDb.configuracoes.get('buffer_minutos')?.valor ?? 10);
 
   // Filtrar agendamentos e bloqueios da data
   const dayBookings = Array.from(memoryDb.agendamentos.values()).filter((a) =>
-    a.data_hora_inicio.startsWith(data)
+    a.data_hora_inicio.startsWith(data) && (!a.manicure_id || a.manicure_id === manicure.id)
   );
 
   const dayBlocks = Array.from(memoryDb.bloqueios.values()).filter((b) =>
-    b.data_inicio.startsWith(data) || b.data_fim.startsWith(data) || b.dia_inteiro
+    (!b.manicure_id || b.manicure_id === manicure.id) &&
+    (b.data_inicio.startsWith(data) || b.data_fim.startsWith(data) || b.dia_inteiro)
   );
 
   const slots = calculateAvailableSlots({
@@ -191,6 +217,8 @@ app.get('/api/disponibilidade', (req, res) => {
 // Criar Agendamento (3º Passo) com Anti-Double-Booking e snapshots
 app.post('/api/agendamentos', async (req, res) => {
   const { servicoId, data, horario, nomeCliente, whatsappCliente } = req.body;
+  const manicure = resolveManicure(req);
+  if (!manicure) return res.status(404).json({ error: 'Manicure não encontrada.' });
 
   // Validação de Celular Brasileiro
   const phoneVal = validateWhatsApp(whatsappCliente || '');
@@ -204,7 +232,7 @@ app.post('/api/agendamentos', async (req, res) => {
   }
 
   const servico = memoryDb.servicos.get(servicoId);
-  if (!servico) {
+  if (!servico || (servico.manicure_id && servico.manicure_id !== manicure.id)) {
     return res.status(404).json({ error: 'Serviço selecionado é inválido.' });
   }
 
@@ -275,6 +303,7 @@ app.post('/api/agendamentos', async (req, res) => {
     codigo,
     cliente_id: cliente.id,
     servico_id: servico.id,
+    manicure_id: manicure.id,
     data_hora_inicio: startISO,
     data_hora_fim: endISO,
     duracao_snapshot: duracao,

@@ -16,6 +16,7 @@ interface ClientBookingViewProps {
   onGoToMyBookings: () => void;
   mode: 'client' | 'admin';
   onModeChange: (mode: 'client' | 'admin') => void;
+  manicureSlug?: string;
 }
 
 const SERVICE_DOT_COLORS: Record<string, string> = {
@@ -26,7 +27,7 @@ const SERVICE_DOT_COLORS: Record<string, string> = {
   'Manutenção': '#5B7B63',
 };
 
-export function ClientBookingView({ onGoToMyBookings, mode, onModeChange }: ClientBookingViewProps) {
+export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicureSlug = 'natalia' }: ClientBookingViewProps) {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1); // 1: Serviço, 2: Data/Hora, 3: Seus Dados, 4: Sucesso Pix
   const [services, setServices] = useState<Servico[]>([]);
   const [selectedService, setSelectedService] = useState<Servico | null>(null);
@@ -57,7 +58,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange }: Clie
   const datePickerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch('/api/servicos')
+    fetch(`/api/servicos?manicure=${encodeURIComponent(manicureSlug)}`)
       .then((res) => res.json())
       .then((data) => setServices(data))
       .catch(() => setErrorMsg('Não foi possível carregar o catálogo de serviços.'));
@@ -65,7 +66,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange }: Clie
     const now = getNowInSaoPaulo();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     setDate(todayStr);
-  }, []);
+  }, [manicureSlug]);
 
   const handleSelectService = (srv: Servico) => {
     setSelectedService(srv);
@@ -78,7 +79,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange }: Clie
     setLoadingSlots(true);
     setErrorMsg('');
     try {
-      const res = await fetch(`/api/disponibilidade?data=${dt}&servicoId=${servicoId}`);
+      const res = await fetch(`/api/disponibilidade?data=${dt}&servicoId=${servicoId}&manicure=${encodeURIComponent(manicureSlug)}`);
       const data = await res.json();
       if (res.ok) {
         setSlots(data.slots || []);
@@ -145,7 +146,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange }: Clie
     setErrorMsg('');
 
     try {
-      const res = await fetch('/api/agendamentos', {
+      const res = await fetch(`/api/agendamentos?manicure=${encodeURIComponent(manicureSlug)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
