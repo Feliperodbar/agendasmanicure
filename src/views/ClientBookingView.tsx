@@ -113,6 +113,11 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange }: Clie
     return `${day}/${month}/${year.slice(-2)}`;
   };
 
+  const getTodayString = () => {
+    const now = getNowInSaoPaulo();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  };
+
   const handleConfirmBooking = async () => {
     if (!isPhoneValid || !nome.trim() || !selectedService || !selectedSlot) {
       setErrorMsg('Preencha seu nome e um WhatsApp celular brasileiro válido.');
@@ -287,7 +292,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange }: Clie
               <input
                 type="date"
                 value={date}
-                min={new Date().toISOString().split('T')[0]}
+                min={getTodayString()}
                 onChange={(e) => handleDateChange(e.target.value)}
                 aria-label="Selecionar data do agendamento"
                 className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
