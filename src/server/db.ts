@@ -341,20 +341,21 @@ const supabaseConfigKeyMap: Record<string, string> = {
 export async function loadSupabaseConfig(): Promise<void> {
   if (!supabaseClient) return;
 
-  const { data, error } = await supabaseClient.from('configuracoes').select('*').limit(1).single();
+  const { data, error } = await supabaseClient.from('configuracoes').select('*');
   if (error) {
     throw new Error(`Não foi possível carregar as configurações do Supabase: ${error.message}`);
   }
-  if (!data) return;
+  if (!data?.length) return;
 
   const now = new Date().toISOString();
-  for (const [appKey, databaseKey] of Object.entries(supabaseConfigKeyMap)) {
-    if (data[databaseKey] !== undefined && data[databaseKey] !== null) {
+  for (const row of data) {
+    const appKey = row.chave as string;
+    if (appKey && row.valor !== undefined && row.valor !== null) {
       memoryDb.configuracoes.set(appKey, {
-        id: String(data.id),
+        id: String(row.id),
         chave: appKey,
-        valor: data[databaseKey],
-        atualizado_em: data.atualizado_em || now,
+        valor: row.valor,
+        atualizado_em: row.atualizado_em || now,
       });
     }
   }
