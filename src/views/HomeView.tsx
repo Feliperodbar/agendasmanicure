@@ -13,9 +13,13 @@ export function HomeView({ manicures, onSelectManicure, onOpenAdmin }: HomeViewP
     <div className="min-h-screen px-5 pt-10 pb-8 max-w-[430px] mx-auto bg-white">
       <div className="text-center space-y-3">
         <div className="w-16 h-16 mx-auto rounded-full bg-[#F7C4D0] text-[#802334] flex items-center justify-center">
-          <span className="font-heading font-extrabold text-2xl">NM</span>
+          <span className="font-heading font-extrabold text-2xl">NH</span>
         </div>
-        <h1 className="font-heading font-extrabold text-2xl text-[#1a1012]">Agende seu horário</h1>
+        <h1
+          className="font-heading font-bold text-6xl text-[#1a1012] leading-none tracking-tight"
+        >
+          Nailhub
+        </h1>
         <p className="text-sm text-gray-600">Escolha a manicure para ver os serviços e horários disponíveis.</p>
       </div>
 

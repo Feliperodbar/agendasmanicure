@@ -135,7 +135,7 @@ export function AdminLoginView({ onSuccess, mode, onModeChange }: AdminLoginView
   return (
     <div className="pb-28 pt-3 px-4 max-w-[430px] mx-auto space-y-4">
       {/* Top Header with Avatar, Link, Seasonal Banner, and Role Switcher */}
-      <Header mode={mode} onModeChange={onModeChange} />
+      <Header mode={mode} onModeChange={onModeChange} login />
 
       {/* Card Container (Image 5) */}
       <div className="bg-white rounded-3xl border border-pink-200/80 p-5 text-center space-y-4 shadow-2xs">
@@ -150,12 +150,12 @@ export function AdminLoginView({ onSuccess, mode, onModeChange }: AdminLoginView
               ? setupStep === 1
                 ? 'Crie seu PIN de 4 números'
                 : 'Confirme seu novo PIN'
-              : 'Área da manicure'}
+              : 'Acesso profissional'}
           </h2>
           <p className="text-xs text-gray-600 font-medium mt-1 leading-relaxed px-2">
             {isSetup
               ? 'Defina o seu código de segurança para proteger a agenda.'
-              : 'Digite seu PIN de 4 números para abrir a agenda, os serviços e as configurações. Só você tem acesso.'}
+              : 'Digite seu PIN de 4 números para acessar sua área de trabalho.'}
           </p>
         </div>
 

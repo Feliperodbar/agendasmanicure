@@ -25,12 +25,16 @@ export function BottomNav({
 }: BottomNavProps) {
   if (mode === 'admin') {
     const adminItems: { id: AdminTab; label: string; icon: React.ElementType }[] = [
-      { id: 'agenda', label: 'Agenda', icon: Calendar },
-      { id: 'servicos', label: 'Serviços', icon: Scissors },
-      { id: 'bloqueios', label: 'Bloqueios', icon: ShieldAlert },
-      { id: 'horarios', label: 'Horários', icon: Sliders },
-      { id: 'regras', label: 'Regras', icon: FileText },
       ...(canManageProfiles ? [{ id: 'manicures' as AdminTab, label: 'Manicures', icon: UsersRound }] : []),
+      ...(!canManageProfiles
+        ? [
+            { id: 'agenda' as AdminTab, label: 'Agenda', icon: Calendar },
+            { id: 'servicos' as AdminTab, label: 'Serviços', icon: Scissors },
+            { id: 'bloqueios' as AdminTab, label: 'Bloqueios', icon: ShieldAlert },
+            { id: 'horarios' as AdminTab, label: 'Horários', icon: Sliders },
+            { id: 'regras' as AdminTab, label: 'Regras', icon: FileText },
+          ]
+        : []),
     ];
 
     return (

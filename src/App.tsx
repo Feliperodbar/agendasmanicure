@@ -29,7 +29,9 @@ export default function App() {
       .then((data) => {
         if (data.isLoggedIn) {
           setIsAdminLoggedIn(true);
-          setIsOwner(Boolean(data.isOwner));
+          const owner = Boolean(data.isOwner);
+          setIsOwner(owner);
+          setAdminTab(owner ? 'manicures' : 'agenda');
         }
       })
       .catch(() => {});
@@ -48,11 +50,17 @@ export default function App() {
 
   const handleAdminSuccess = () => {
     setIsAdminLoggedIn(true);
-    setAdminTab('agenda');
     fetch('/api/admin/session', { credentials: 'include' })
       .then((res) => res.json())
-      .then((data) => setIsOwner(Boolean(data.isOwner)))
-      .catch(() => setIsOwner(false));
+      .then((data) => {
+        const owner = Boolean(data.isOwner);
+        setIsOwner(owner);
+        setAdminTab(owner ? 'manicures' : 'agenda');
+      })
+      .catch(() => {
+        setIsOwner(false);
+        setAdminTab('agenda');
+      });
   };
 
   const handleAdminLogout = () => {
@@ -60,6 +68,17 @@ export default function App() {
     setIsOwner(false);
     setMode('client');
     setClientTab('agendar');
+  };
+
+  const handleOpenAdmin = async () => {
+    await fetch('/api/admin/logout', {
+      method: 'POST',
+      credentials: 'include',
+    }).catch(() => {});
+    setIsAdminLoggedIn(false);
+    setIsOwner(false);
+    setAdminTab('agenda');
+    setMode('admin');
   };
 
   return (
@@ -75,7 +94,7 @@ export default function App() {
                   setSelectedManicure(profile);
                   setShowHome(false);
                 }}
-                onOpenAdmin={() => setMode('admin')}
+                onOpenAdmin={handleOpenAdmin}
               />
             ) : clientTab === 'agendar' && (
               <ClientBookingView

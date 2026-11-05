@@ -8,10 +8,11 @@ interface HeaderProps {
   onModeChange: (mode: 'client' | 'admin') => void;
   manicure?: Manicure | null;
   global?: boolean;
+  login?: boolean;
 }
 
-export function Header({ mode, onModeChange, manicure, global = false }: HeaderProps) {
-  const showSeasonalWarning = isSeasonalPeriod();
+export function Header({ mode, onModeChange, manicure, global = false, login = false }: HeaderProps) {
+  const showSeasonalWarning = !login && isSeasonalPeriod();
 
   return (
     <header className="space-y-3 mb-5 pt-2">
@@ -28,9 +29,9 @@ export function Header({ mode, onModeChange, manicure, global = false }: HeaderP
 
         <div>
           <h1 className="font-heading font-extrabold text-[21px] leading-tight text-[#1a1012] tracking-tight">
-            {global ? 'Meus horários' : `${manicure?.name || 'Natália Marcela'} | Nail designer`}
+            {login ? 'Acesso profissional' : global ? 'Meus horários' : `${manicure?.name || 'Natália Marcela'} | Nail designer`}
           </h1>
-          {!global && <div className="flex items-center gap-3 mt-1.5">
+          {!global && !login && <div className="flex items-center gap-3 mt-1.5">
             <a
               href={`https://instagram.com/${(manicure?.instagram || 'nataliamarcelanail').replace(/^@/, '')}`}
               target="_blank"
