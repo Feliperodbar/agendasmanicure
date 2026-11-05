@@ -8,12 +8,14 @@ import { AdminAgendaView } from './views/AdminAgendaView';
 import { AdminServicosView } from './views/AdminServicosView';
 import { AdminBloqueiosView } from './views/AdminBloqueiosView';
 import { AdminHorariosView } from './views/AdminHorariosView';
+import type { Manicure } from './types';
 
 export default function App() {
   const [mode, setMode] = useState<'client' | 'admin'>('client');
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [clientTab, setClientTab] = useState<ClientTab>('agendar');
   const [adminTab, setAdminTab] = useState<AdminTab>('agenda');
+  const [manicures, setManicures] = useState<Manicure[]>([]);
 
   // Ao carregar, verifica se já existe sessão de admin ativa
   useEffect(() => {
@@ -24,6 +26,13 @@ export default function App() {
           setIsAdminLoggedIn(true);
         }
       })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/manicures')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setManicures(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 

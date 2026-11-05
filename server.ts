@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, persistAdminAuth, persistSessao, deleteSessao, deleteSessionByToken, deleteAllSessoes, persistServico, persistCliente, persistAgendamento, persistBloqueio, persistListaEspera, persistNotificacao, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, findSupabaseSession, getSupabaseAdminAuth, persistAdminAuth, persistSessao, deleteSessao, deleteSessionByToken, deleteAllSessoes, persistServico, persistCliente, persistAgendamento, persistBloqueio, persistListaEspera, persistNotificacao, persistManicure, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor } from './src/utils/rules.js';
@@ -68,6 +68,73 @@ app.get('/api/admin/session', async (req, res) => {
 // 1. ROTAS PÚBLICAS DO CLIENTE
 // -------------------------------------------------------------
 
+// Perfis públicos das manicures ativas
+function toPublicManicure(m: Manicure) {
+  return { id: m.id, slug: m.slug, name: m.name, instagram: m.instagram, photo_url: m.photo_url };
+}
+
+app.get('/api/manicures', (_req, res) => {
+  const manicures = Array.from(memoryDb.manicures.values())
+    .filter((m) => m.active)
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+    .map(toPublicManicure);
+  res.json(manicures);
+});
+
+app.get('/api/manicures/:slug', (req, res) => {
+  const manicure = Array.from(memoryDb.manicures.values())
+    .find((m) => m.active && m.slug === req.params.slug);
+  if (!manicure) {
+    return res.status(404).json({ error: 'Manicure não encontrada.' });
+  }
+  res.json(toPublicManicure(manicure));
+});
+
+function slugifyManicure(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+app.get('/api/admin/manicures', requireAdmin, (_req, res) => {
+  res.json(Array.from(memoryDb.manicures.values()).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+});
+
+app.post('/api/admin/manicures', requireAdmin, async (req, res) => {
+  const { name, slug, instagram, photo_url } = req.body as {
+    name?: string;
+    slug?: string;
+    instagram?: string;
+    photo_url?: string;
+  };
+  const normalizedName = String(name || '').trim();
+  const normalizedSlug = slugifyManicure(String(slug || normalizedName));
+  if (normalizedName.length < 3 || !normalizedSlug) {
+    return res.status(400).json({ error: 'Nome e slug válidos são obrigatórios.' });
+  }
+  if (Array.from(memoryDb.manicures.values()).some((item) => item.slug === normalizedSlug)) {
+    return res.status(409).json({ error: 'Este slug já está em uso.' });
+  }
+
+  const now = new Date().toISOString();
+  const manicure: Manicure = {
+    id: crypto.randomUUID(),
+    slug: normalizedSlug,
+    name: normalizedName,
+    instagram: String(instagram || '').trim() || null,
+    photo_url: String(photo_url || '').trim() || null,
+    active: true,
+    created_at: now,
+    updated_at: now,
+  };
+  await persistManicure(manicure);
+  memoryDb.manicures.set(manicure.id, manicure);
+  res.status(201).json(toPublicManicure(manicure));
+});
 // Catálogo de serviços ativos
 app.get('/api/servicos', (req, res) => {
   const servicos = Array.from(memoryDb.servicos.values())

@@ -3,6 +3,17 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 import { DEFAULT_BUSINESS_HOURS } from '../utils/slots.js';
 
+export interface Manicure {
+  id: string;
+  slug: string;
+  name: string;
+  instagram: string | null;
+  photo_url: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Cliente {
   id: string;
   nome: string;
@@ -21,6 +32,7 @@ export interface Servico {
   ativo: boolean;
   criado_em: string;
   atualizado_em: string;
+  manicure_id?: string | null;
 }
 
 export interface Configuracao {
@@ -29,6 +41,7 @@ export interface Configuracao {
   valor: any;
   descricao?: string;
   atualizado_em: string;
+  manicure_id?: string | null;
 }
 
 export interface Agendamento {
@@ -50,6 +63,7 @@ export interface Agendamento {
   // Joins
   cliente?: Cliente;
   servico?: Servico;
+  manicure_id?: string | null;
 }
 
 export interface Bloqueio {
@@ -59,6 +73,7 @@ export interface Bloqueio {
   motivo: string;
   dia_inteiro: boolean;
   criado_em: string;
+  manicure_id?: string | null;
 }
 
 export interface AdminAuth {
@@ -67,6 +82,7 @@ export interface AdminAuth {
   tentativas_falhas: number;
   bloqueado_ate: string | null;
   atualizado_em: string;
+  manicure_id?: string | null;
 }
 
 export interface Sessao {
@@ -74,6 +90,7 @@ export interface Sessao {
   token_hash: string;
   expira_em: string;
   criado_em: string;
+  manicure_id?: string | null;
 }
 
 export interface ListaEspera {
@@ -84,6 +101,7 @@ export interface ListaEspera {
   periodo: 'manha' | 'tarde' | 'qualquer';
   notificado: boolean;
   criado_em: string;
+  manicure_id?: string | null;
 }
 
 export interface Notificacao {
@@ -95,6 +113,7 @@ export interface Notificacao {
   status: 'simulado';
   enviado_em: string | null;
   criado_em: string;
+  manicure_id?: string | null;
 }
 
 // In-Memory Database store with exact initial seed
@@ -108,14 +127,30 @@ class MemoryDatabase {
   sessoes: Map<string, Sessao> = new Map();
   listaEspera: Map<string, ListaEspera> = new Map();
   notificacoes: Map<string, Notificacao> = new Map();
+  manicures: Map<string, Manicure> = new Map();
   seqCounter: number = 0;
 
   constructor() {
     this.seed();
   }
 
+  seedDefaultManicure() {
+    const now = new Date().toISOString();
+    this.manicures.set('default-manicure', {
+      id: 'default-manicure',
+      slug: 'natalia',
+      name: 'Natália Marcela',
+      instagram: 'nataliamarcelanail',
+      photo_url: null,
+      active: true,
+      created_at: now,
+      updated_at: now,
+    });
+  }
+
   seed() {
     const now = new Date().toISOString();
+    this.seedDefaultManicure();
 
     // 1. Serviços Iniciais do Catálogo Oficial
     const catalog = [
@@ -276,6 +311,7 @@ async function hydrateTable<T extends Persistable>(
 export async function hydrateSupabaseData(): Promise<void> {
   if (!supabaseClient) return;
   await Promise.all([
+    hydrateTable('manicures', memoryDb.manicures),
     hydrateTable('servicos', memoryDb.servicos),
     hydrateTable('clientes', memoryDb.clientes),
     hydrateTable('agendamentos', memoryDb.agendamentos),
@@ -286,6 +322,7 @@ export async function hydrateSupabaseData(): Promise<void> {
   ]);
   const { data: auth, error: authError } = await supabaseClient.from('admin_auth').select('*').limit(1).maybeSingle();
   if (!authError && auth) memoryDb.adminAuth = auth as AdminAuth;
+  if (memoryDb.manicures.size === 0) memoryDb.seedDefaultManicure();
   memoryDb.seqCounter = Array.from(memoryDb.agendamentos.values())
     .map((item) => Number(item.codigo?.replace(/\D/g, '') || 0))
     .reduce((max, value) => Math.max(max, value), 0);
@@ -297,6 +334,7 @@ export const persistAgendamento = (value: Agendamento) => supabaseUpsert('agenda
 export const persistBloqueio = (value: Bloqueio) => supabaseUpsert('bloqueios', value);
 export const persistListaEspera = (value: ListaEspera) => supabaseUpsert('lista_espera', value);
 export const persistNotificacao = (value: Notificacao) => supabaseUpsert('notificacoes', value);
+export const persistManicure = (value: Manicure) => supabaseUpsert('manicures', value);
 export const deleteAgendamento = (id: string) => supabaseDelete('agendamentos', id);
 export const deleteBloqueio = (id: string) => supabaseDelete('bloqueios', id);
 export const persistSessao = (value: Sessao) => supabaseUpsert('sessoes', value);
