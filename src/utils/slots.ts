@@ -77,9 +77,12 @@ export function calculateAvailableSlots(params: {
   const targetDate = new Date(year, month - 1, day, 12, 0, 0);
   const weekday = targetDate.getDay();
 
-  const dayConfig = normalizedBusinessHours[weekday];
+  const dayConfig = normalizedBusinessHours[weekday] ??
+    (weekday === 0 && month === 12
+      ? normalizedBusinessHours[1] ?? DEFAULT_BUSINESS_HOURS[1]
+      : null);
   if (!dayConfig || !dayConfig.inicio || !dayConfig.fim) {
-    return []; // Domingo ou dia fechado
+    return []; // Dia fechado
   }
 
   // 2. Verificar se há bloqueio de dia inteiro

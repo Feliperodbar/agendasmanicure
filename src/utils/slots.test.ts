@@ -10,18 +10,35 @@ test('domingo fechado não deve retornar nenhum slot', () => {
     nowReference: new Date('2026-11-01T08:00:00-03:00'),
   });
 
-  test('aceita horários de funcionamento armazenados como JSON textual', () => {
-    const slots = calculateAvailableSlots({
-      dateStr: '2026-11-13',
-      serviceDurationMinutes: 120,
-      businessHours: '{"5":{"inicio":"09:00","fim":"19:00"}}',
-      nowReference: new Date('2026-11-04T12:00:00-03:00'),
-    });
-
-    assert.equal(slots[0]?.time, '09:00');
-    assert.equal(slots.at(-1)?.time, '19:00');
-  });
   assert.equal(slots.length, 0);
+});
+
+test('libera domingos em dezembro no horário normal e mantém fechados nos outros meses', () => {
+  const decemberSlots = calculateAvailableSlots({
+    dateStr: '2026-12-06',
+    serviceDurationMinutes: 60,
+    nowReference: new Date('2026-11-01T08:00:00-03:00'),
+  });
+  const januarySlots = calculateAvailableSlots({
+    dateStr: '2027-01-03',
+    serviceDurationMinutes: 60,
+    nowReference: new Date('2026-11-01T08:00:00-03:00'),
+  });
+
+  assert.ok(decemberSlots.some((slot) => slot.time === '09:00'));
+  assert.equal(januarySlots.length, 0);
+});
+
+test('aceita horários de funcionamento armazenados como JSON textual', () => {
+  const slots = calculateAvailableSlots({
+    dateStr: '2026-11-13',
+    serviceDurationMinutes: 120,
+    businessHours: '{"5":{"inicio":"09:00","fim":"19:00"}}',
+    nowReference: new Date('2026-11-04T12:00:00-03:00'),
+  });
+
+  assert.equal(slots[0]?.time, '09:00');
+  assert.equal(slots.at(-1)?.time, '19:00');
 });
 
 test('permite agendar às 18:00, mas não permite horários anteriores que ultrapassem o fechamento', () => {

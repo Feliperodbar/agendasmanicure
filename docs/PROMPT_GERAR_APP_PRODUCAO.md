@@ -67,7 +67,7 @@ Alongamento Molde F1 R$ 130 (120 min) · Banho de Gel R$ 100 (90 min) · Manuten
 5. Sem o PIN, o admin não abre e as ações de admin são recusadas pelo servidor.
 6. Calendário: dia com pendente fica laranja; dia só com confirmados, verde; cancelado não colore.
 7. Frase do Pix mostra o valor certo de 50% do serviço escolhido e a chave nataliamarcela49@gmail.com.
-8. Serviço de 120 min às 17:00 (fecha 18:00) é recusado por não caber; domingo fechado não oferece horários.
+8. Serviço de 120 min às 17:00 (fecha 18:00) é recusado por não caber; domingo não oferece horários, exceto em dezembro, quando usa o horário normal de funcionamento.
 
 NÃO inclua: cobrança real de Pix, envio real de WhatsApp/SMS/e-mail, login da cliente, escolha de profissional, marketplace. Tudo isso está fora do escopo — notificações e sincronização são simuladas e identificadas como tal.
 ```
