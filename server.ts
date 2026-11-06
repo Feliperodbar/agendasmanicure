@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistServicoOrThrow, refreshServicos, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, listClientesByIds, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistServicoOrThrow, refreshServicos, nextBookingCode, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots, BusinessHoursMap } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor, getDepositPercentageForDate } from './src/utils/rules.js';
@@ -426,8 +426,7 @@ app.post('/api/agendamentos', async (req, res) => {
   }
 
   // Gera código sequencial NM-0001
-  memoryDb.seqCounter += 1;
-  const codigo = `NM-${String(memoryDb.seqCounter).padStart(4, '0')}`;
+  const codigo = await nextBookingCode();
   const valorSinal = calculateDeposit(servico.preco, sinalPct);
 
   const agendamentoId = crypto.randomUUID();
@@ -977,6 +976,8 @@ app.get('/api/admin/dia-agendamentos', requireAdmin, async (req, res) => {
 
   try {
     const bookings = await getAdminAgendamentosInRange(req, startISO, endISO);
+    const clientesFrescos = await listClientesByIds(bookings.map((b) => b.cliente_id));
+    for (const c of clientesFrescos) memoryDb.clientes.set(c.id, c);
     const agendamentos = bookings
       .sort((a, b) => new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime())
       .map((booking) => {
@@ -984,8 +985,8 @@ app.get('/api/admin/dia-agendamentos', requireAdmin, async (req, res) => {
         const servico = memoryDb.servicos.get(booking.servico_id);
         return {
           ...booking,
-          cliente_nome: cliente?.nome || 'Cliente',
-          cliente_whatsapp: cliente?.whatsapp || '',
+          cliente_nome: booking.cliente_nome_editado || cliente?.nome || 'Cliente',
+          cliente_whatsapp: booking.cliente_whatsapp_editado || cliente?.whatsapp || '',
           servico_nome: servico?.nome || 'Serviço',
         };
       });
@@ -1074,22 +1075,19 @@ app.patch('/api/admin/agendamentos/:id/cliente', requireAdmin, async (req, res) 
     if (!isInAdminScope(req, ag.manicure_id)) return res.status(403).json({ error: 'Agendamento fora do seu perfil.' });
 
     const now = new Date().toISOString();
-    let cliente = Array.from(memoryDb.clientes.values()).find((c) => c.whatsapp === phoneVal.clean);
-    if (cliente) {
-      cliente = { ...cliente, nome, atualizado_em: now };
-    } else {
-      cliente = { id: crypto.randomUUID(), nome, whatsapp: phoneVal.clean, criado_em: now, atualizado_em: now };
-    }
-    await persistCliente(cliente);
-    memoryDb.clientes.set(cliente.id, cliente);
-
-    const updated: Agendamento = { ...ag, cliente_id: cliente.id, atualizado_em: now };
+    // Os dados editados ficam só neste agendamento; o cadastro da cliente (compartilhado) não muda.
+    const updated: Agendamento = {
+      ...ag,
+      cliente_nome_editado: nome,
+      cliente_whatsapp_editado: phoneVal.clean,
+      atualizado_em: now,
+    };
     await persistAgendamentoOrThrow(updated);
     memoryDb.agendamentos.set(id, updated);
 
     res.json({
       success: true,
-      agendamento: { ...updated, cliente_nome: cliente.nome, cliente_whatsapp: cliente.whatsapp },
+      agendamento: { ...updated, cliente_nome: nome, cliente_whatsapp: phoneVal.clean },
     });
   } catch (error) {
     console.error('Falha ao editar cliente do agendamento:', error);
@@ -1173,8 +1171,7 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, async (req, res) => {
   }
   await persistCliente(cliente);
 
-  memoryDb.seqCounter += 1;
-  const codigo = `NM-${String(memoryDb.seqCounter).padStart(4, '0')}`;
+  const codigo = await nextBookingCode();
   const sinalPct = getDepositPercentageForDate(data, Number(configValue(req, 'sinal_percentual', 50)));
   const valorSinal = calculateDeposit(servico.preco, sinalPct);
 
@@ -1386,8 +1383,8 @@ app.get('/api/admin/export-csv', requireAdmin, (req, res) => {
 
     return [
       a.codigo,
-      `"${(cliente?.nome || '').replace(/"/g, '""')}"`,
-      cliente?.whatsapp || '',
+      `"${(a.cliente_nome_editado || cliente?.nome || '').replace(/"/g, '""')}"`,
+      a.cliente_whatsapp_editado || cliente?.whatsapp || '',
       `"${(servico?.nome || '').replace(/"/g, '""')}"`,
       formatInSaoPaulo(a.data_hora_inicio, { day: '2-digit', month: '2-digit', year: 'numeric' }),
       formatInSaoPaulo(a.data_hora_inicio, { hour: '2-digit', minute: '2-digit' }),

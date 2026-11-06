@@ -62,6 +62,8 @@ export interface Agendamento {
   sinal_confirmado: boolean;
   estorno_elegivel: boolean;
   observacoes?: string;
+  cliente_nome_editado?: string | null;
+  cliente_whatsapp_editado?: string | null;
   criado_em: string;
   atualizado_em: string;
   // Joins
@@ -338,6 +340,17 @@ export async function getClienteByWhatsApp(whatsapp: string): Promise<Cliente | 
   return data as Cliente | null;
 }
 
+export async function listClientesByIds(ids: string[]): Promise<Cliente[]> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (unique.length === 0) return [];
+  if (!supabaseClient) {
+    return unique.map((id) => memoryDb.clientes.get(id)).filter((c): c is Cliente => !!c);
+  }
+  const { data, error } = await supabaseClient.from('clientes').select('*').in('id', unique);
+  if (error) throw new Error(`Supabase clientes read failed: ${error.message}`);
+  return (data || []) as Cliente[];
+}
+
 export async function persistClienteOrThrow(value: Cliente): Promise<void> {
   if (!supabaseClient) {
     if (process.env.NODE_ENV === 'production') {
@@ -573,6 +586,20 @@ export async function hydrateSupabaseData(): Promise<void> {
   memoryDb.seqCounter = Array.from(memoryDb.agendamentos.values())
     .map((item) => Number(item.codigo?.replace(/\D/g, '') || 0))
     .reduce((max, value) => Math.max(max, value), 0);
+}
+
+export async function nextBookingCode(): Promise<string> {
+  if (supabaseClient) {
+    const { data, error } = await supabaseClient.from('agendamentos').select('codigo');
+    if (!error) {
+      for (const row of data || []) {
+        const n = Number(String(row.codigo || '').replace(/\D/g, '') || 0);
+        if (n > memoryDb.seqCounter) memoryDb.seqCounter = n;
+      }
+    }
+  }
+  memoryDb.seqCounter += 1;
+  return `NM-${String(memoryDb.seqCounter).padStart(4, '0')}`;
 }
 
 export async function refreshServicos(): Promise<void> {

@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "dev:local": "tsx --env-file=.env.local-dev server.ts",
+    "db:local:start": "supabase start",
+    "db:local:stop": "supabase stop",
+    "db:local:reset": "supabase db reset",
     "start": "tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",

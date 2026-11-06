@@ -3,7 +3,7 @@ import { PhoneInput } from '../components/PhoneInput';
 import { Header } from '../components/Header';
 import { CLIENT_DEPOSIT_SEASONAL_MESSAGE, getNowInSaoPaulo, toSaoPauloISO } from '../utils/timezone';
 import { calculateDeposit, getDepositPercentageForDate } from '../utils/rules';
-import { Clock, CheckCircle2, ChevronRight, AlertCircle, Copy, Check } from 'lucide-react';
+import { Clock, CheckCircle2, ChevronRight, AlertCircle, Copy, Check, ArrowLeft } from 'lucide-react';
 import type { Manicure } from '../types';
 
 interface Servico {
@@ -16,6 +16,8 @@ interface Servico {
 
 interface ClientBookingViewProps {
   onGoToMyBookings: () => void;
+  onGoToRules: () => void;
+  onBackToHome?: () => void;
   mode: 'client' | 'admin';
   onModeChange: (mode: 'client' | 'admin') => void;
   manicureSlug?: string;
@@ -30,7 +32,7 @@ const SERVICE_DOT_COLORS: Record<string, string> = {
   'Manutenção': '#5B7B63',
 };
 
-export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicureSlug = 'natalia', manicure }: ClientBookingViewProps) {
+export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome, mode, onModeChange, manicureSlug = 'natalia', manicure }: ClientBookingViewProps) {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1); // 1: Serviço, 2: Data/Hora, 3: Seus Dados, 4: Sucesso Pix
   const [services, setServices] = useState<Servico[]>([]);
   const [selectedService, setSelectedService] = useState<Servico | null>(null);
@@ -394,9 +396,24 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
       {/* PASSO 1: Catálogo de Serviços (Image 1) */}
       {step === 1 && (
         <section aria-labelledby="servicos-heading" className="space-y-3">
+          {onBackToHome && (
+            <button
+              type="button"
+              onClick={onBackToHome}
+              className="flex items-center gap-1.5 text-xs font-bold text-gray-700 hover:text-gray-900"
+            >
+              <ArrowLeft size={16} /> Voltar ao início
+            </button>
+          )}
           <h2 id="servicos-heading" className="font-heading font-extrabold text-xl text-[#1a1012] tracking-tight mb-2">
             Escolha seu serviço
           </h2>
+
+          {services.length === 0 && (
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-xs font-medium text-gray-600">
+              Esta manicure ainda não cadastrou serviços. Volte ao início para escolher outra profissional.
+            </div>
+          )}
 
           <div role="note" className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-xs text-amber-950 leading-relaxed">
             <strong>Regra de sinal:</strong> {CLIENT_DEPOSIT_SEASONAL_MESSAGE}
@@ -631,7 +648,7 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
           </div>
 
           <p className="text-[11px] text-gray-500 font-medium text-center leading-normal">
-            Ao confirmar, o app confere de novo se o horário continua livre. Regras completas na aba <strong className="font-bold text-gray-800">Regras</strong>, aqui embaixo.
+            Ao confirmar, o app confere de novo se o horário continua livre. Veja as regras completas na tela de confirmação do agendamento.
           </p>
 
           <div className="flex gap-2.5 pt-2">
@@ -712,6 +729,13 @@ export function ClientBookingView({ onGoToMyBookings, mode, onModeChange, manicu
           )}
 
           <div className="pt-2 space-y-2">
+            <button
+              type="button"
+              onClick={onGoToRules}
+              className="w-full h-11 bg-[#F7C4D0] text-gray-900 font-bold text-xs rounded-2xl"
+            >
+              Ver Regras de Atendimento
+            </button>
             <button
               type="button"
               onClick={onGoToMyBookings}

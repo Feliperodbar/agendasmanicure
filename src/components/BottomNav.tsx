@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, ListFilter, FileText, Scissors, ShieldAlert, Sliders, UsersRound, Repeat2 } from 'lucide-react';
+import { Calendar, ListFilter, FileText, Scissors, ShieldAlert, Sliders, UsersRound, LockKeyhole } from 'lucide-react';
 
 export type ClientTab = 'agendar' | 'meus-horarios' | 'regras';
 export type AdminTab = 'agenda' | 'servicos' | 'bloqueios' | 'manicures' | 'horarios' | 'regras';
@@ -69,8 +69,7 @@ export function BottomNav({
   const clientItems: { id: ClientTab | 'trocar'; label: string; icon: React.ElementType }[] = [
     { id: 'agendar', label: 'Agendar', icon: Calendar },
     { id: 'meus-horarios', label: 'Meus horários', icon: ListFilter },
-    { id: 'regras', label: 'Regras', icon: FileText },
-    { id: 'trocar', label: 'Trocar manicure', icon: Repeat2 },
+    { id: 'trocar', label: 'Área da manicure', icon: LockKeyhole },
   ];
 
   return (

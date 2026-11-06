@@ -21,6 +21,7 @@ export default function App() {
   const [manicures, setManicures] = useState<Manicure[]>([]);
   const [selectedManicure, setSelectedManicure] = useState<Manicure | null>(null);
   const [showHome, setShowHome] = useState(true);
+  const [rulesBack, setRulesBack] = useState(false);
 
   // Ao carregar, verifica se já existe sessão de admin ativa
   useEffect(() => {
@@ -96,15 +97,22 @@ export default function App() {
                 }}
                 onOpenAdmin={handleOpenAdmin}
               />
-            ) : clientTab === 'agendar' && (
-              <ClientBookingView
-                key={selectedManicure?.id || 'natalia'}
-                onGoToMyBookings={() => setClientTab('meus-horarios')}
-                mode={mode}
-                onModeChange={(m) => setMode(m)}
-                manicureSlug={selectedManicure?.slug || 'natalia'}
-                manicure={selectedManicure}
-              />
+            ) : (clientTab === 'agendar' || (clientTab === 'regras' && rulesBack)) && (
+              <div className={clientTab === 'regras' ? 'hidden' : undefined}>
+                <ClientBookingView
+                  key={selectedManicure?.id || 'natalia'}
+                  onGoToMyBookings={() => setClientTab('meus-horarios')}
+                  onBackToHome={() => setShowHome(true)}
+                  onGoToRules={() => {
+                    setRulesBack(true);
+                    setClientTab('regras');
+                  }}
+                  mode={mode}
+                  onModeChange={(m) => setMode(m)}
+                  manicureSlug={selectedManicure?.slug || 'natalia'}
+                  manicure={selectedManicure}
+                />
+              </div>
             )}
             {!showHome && clientTab === 'meus-horarios' && (
               <ClientMyBookingsView
@@ -112,7 +120,14 @@ export default function App() {
                 onModeChange={(m) => setMode(m)}
               />
             )}
-            {!showHome && clientTab === 'regras' && <RulesView />}
+            {!showHome && clientTab === 'regras' && (
+              <RulesView
+                onBack={rulesBack ? () => {
+                  setRulesBack(false);
+                  setClientTab('agendar');
+                } : undefined}
+              />
+            )}
           </div>
         )}
 
@@ -157,7 +172,7 @@ export default function App() {
               }
             }}
             onSelectAdminTab={(tab) => setAdminTab(tab)}
-            onChangeManicure={() => setShowHome(true)}
+            onChangeManicure={handleOpenAdmin}
             canManageProfiles={isOwner}
           />
         )}

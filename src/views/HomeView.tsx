@@ -1,6 +1,7 @@
 import React from 'react';
-import { Instagram, LockKeyhole, UserRound } from 'lucide-react';
+import { Instagram, UserRound } from 'lucide-react';
 import type { Manicure } from '../types';
+import { Logo } from '../components/Logo';
 
 interface HomeViewProps {
   manicures: Manicure[];
@@ -12,8 +13,8 @@ export function HomeView({ manicures, onSelectManicure, onOpenAdmin }: HomeViewP
   return (
     <div className="min-h-screen px-5 pt-10 pb-8 max-w-[430px] mx-auto bg-white">
       <div className="text-center space-y-3">
-        <div className="w-16 h-16 mx-auto rounded-full bg-[#F7C4D0] text-[#802334] flex items-center justify-center">
-          <span className="font-heading font-extrabold text-2xl">NH</span>
+        <div className="mx-auto w-16 h-16">
+          <Logo size={64} />
         </div>
         <h1
           className="font-heading font-bold text-6xl text-[#1a1012] leading-none tracking-tight"
@@ -57,14 +58,6 @@ export function HomeView({ manicures, onSelectManicure, onOpenAdmin }: HomeViewP
           ))
         )}
       </section>
-
-      <button
-        type="button"
-        onClick={onOpenAdmin}
-        className="mt-10 mx-auto flex items-center gap-2 text-sm font-semibold text-[#802334] underline"
-      >
-        <LockKeyhole size={15} /> Sou a manicure
-      </button>
     </div>
   );
 }
