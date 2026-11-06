@@ -176,6 +176,17 @@ export function AdminManicuresView({ onLogout }: AdminManicuresViewProps) {
                 const response = await fetch(`/api/admin/manicures/${manicure.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !manicure.active }) });
                 if (response.ok) setManicures((current) => current.map((item) => item.id === manicure.id ? { ...item, active: !manicure.active } : item));
               }} className="text-xs font-bold text-gray-600">{manicure.active ? 'Desativar' : 'Ativar'}</button>
+              <button type="button" onClick={async () => {
+                if (!window.confirm(`Excluir a manicure "${manicure.name}"? Serviços, bloqueios e o PIN dela serão apagados.`)) return;
+                const response = await fetch(`/api/admin/manicures/${manicure.id}`, { method: 'DELETE', credentials: 'include' });
+                if (response.ok) {
+                  setManicures((current) => current.filter((item) => item.id !== manicure.id));
+                  setFeedback({ text: 'Manicure excluída.', type: 'success' });
+                  return;
+                }
+                const data = await response.json().catch(() => null) as { error?: string } | null;
+                setFeedback({ text: data?.error || 'Não foi possível excluir a manicure.', type: 'error' });
+              }} className="text-xs font-bold text-red-700">Excluir</button>
             </article>
           ))
         )}

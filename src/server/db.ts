@@ -630,6 +630,34 @@ export const deleteAgendamento = (id: string) => supabaseDelete('agendamentos', 
 export const deleteBloqueio = (id: string) => supabaseDelete('bloqueios', id);
 export const persistSessao = (value: Sessao) => supabaseUpsert('sessoes', value);
 export const deleteSessao = (id: string) => supabaseDelete('sessoes', id);
+
+export async function countAgendamentosByManicure(manicureId: string): Promise<number> {
+  if (!supabaseClient) {
+    return Array.from(memoryDb.agendamentos.values()).filter((a) => a.manicure_id === manicureId).length;
+  }
+  const { count, error } = await supabaseClient
+    .from('agendamentos')
+    .select('id', { count: 'exact', head: true })
+    .eq('manicure_id', manicureId);
+  if (error) throw new Error(error.message);
+  return count || 0;
+}
+
+// Remove o perfil e tudo que pertence só a ele (serviços, bloqueios, configurações, PIN e sessões).
+export async function deleteManicureCascade(manicureId: string): Promise<void> {
+  if (supabaseClient) {
+    for (const table of ['servicos', 'bloqueios', 'configuracoes', 'sessoes', 'admin_auth', 'lista_espera', 'notificacoes']) {
+      const { error } = await supabaseClient.from(table).delete().eq('manicure_id', manicureId);
+      if (error) throw new Error(`${table}: ${error.message}`);
+    }
+    const { error } = await supabaseClient.from('manicures').delete().eq('id', manicureId);
+    if (error) throw new Error(error.message);
+  }
+  memoryDb.manicures.delete(manicureId);
+  for (const map of [memoryDb.servicos, memoryDb.bloqueios, memoryDb.adminAuths, memoryDb.sessoes] as Map<string, any>[]) {
+    for (const [key, item] of map) if (item.manicure_id === manicureId) map.delete(key);
+  }
+}
 export async function deleteSessionByToken(tokenHash: string): Promise<void> {
   if (!supabaseClient) return;
   const { error } = await supabaseClient.from('sessoes').delete().eq('token_hash', tokenHash);

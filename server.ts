@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, listClientesByIds, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistServicoOrThrow, refreshServicos, nextBookingCode, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, listClientesByIds, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistServicoOrThrow, refreshServicos, nextBookingCode, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, countAgendamentosByManicure, deleteManicureCascade, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots, BusinessHoursMap } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor, getDepositPercentageForDate } from './src/utils/rules.js';
@@ -255,7 +255,21 @@ app.patch('/api/admin/manicures/:id', requireAdmin, async (req, res) => {
   await persistManicure(manicure);
   res.json(toPublicManicure(manicure));
 });
-// Catálogo de serviços ativos
+
+app.delete('/api/admin/manicures/:id', requireAdmin, async (req, res) => {
+  if (!requireOwner(req, res)) return;
+  const { id } = req.params;
+  try {
+    if (await countAgendamentosByManicure(id) > 0) {
+      return res.status(409).json({ error: 'Esta manicure tem agendamentos. Desative o perfil em vez de excluir.' });
+    }
+    await deleteManicureCascade(id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Falha ao excluir manicure:', error);
+    res.status(500).json({ error: 'Não foi possível excluir a manicure.' });
+  }
+});
 app.get('/api/servicos', async (req, res) => {
   await refreshServicos();
   res.set('Cache-Control', 'no-store');
