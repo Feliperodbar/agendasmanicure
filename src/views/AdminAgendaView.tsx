@@ -45,6 +45,13 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
   const [newRescheduleDate, setNewRescheduleDate] = useState('');
   const [newRescheduleTime, setNewRescheduleTime] = useState('');
 
+  // Edição de cliente
+  const [editItem, setEditItem] = useState<any | null>(null);
+  const [editNome, setEditNome] = useState('');
+  const [editZap, setEditZap] = useState('');
+  const [editZapValid, setEditZapValid] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+
   // Agendamento Manual
   const [showManualModal, setShowManualModal] = useState(false);
   const [manualNome, setManualNome] = useState('');
@@ -169,6 +176,44 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
       setFeedbackMsg({ text: 'Erro ao excluir.', type: 'error' });
     } finally {
       setDeleteId(null);
+    }
+  };
+
+  const openEditClient = (b: any) => {
+    setEditItem(b);
+    setEditNome(b.cliente_nome || '');
+    setEditZap(b.cliente_whatsapp || '');
+    setEditZapValid(true);
+  };
+
+  const handleSaveClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editItem) return;
+    if (!editZapValid || editNome.trim().length < 2) {
+      setFeedbackMsg({ text: 'Preencha o nome e um celular válido.', type: 'error' });
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/admin/agendamentos/${editItem.id}/cliente`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: editNome.trim(), whatsapp: editZap }),
+      });
+      if (!handleAdminResponse(res)) return;
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setFeedbackMsg({ text: 'Dados da cliente atualizados!', type: 'success' });
+        setEditItem(null);
+        loadDayBookings();
+      } else {
+        setFeedbackMsg({ text: data.error || 'Erro ao salvar dados da cliente.', type: 'error' });
+      }
+    } catch {
+      setFeedbackMsg({ text: 'Erro de conexão.', type: 'error' });
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -584,6 +629,14 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
 
                     <button
                       type="button"
+                      onClick={() => openEditClient(b)}
+                      className="h-8 px-2.5 bg-gray-50 text-gray-800 border border-gray-200 rounded-xl text-xs font-bold"
+                    >
+                      Editar cliente
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => setDeleteId(b.id)}
                       className="h-8 px-2 bg-gray-100 hover:text-red-700 rounded-xl text-xs font-bold text-gray-500 ml-auto"
                       title="Excluir Agendamento"
@@ -659,6 +712,53 @@ export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaVie
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Modal de Edição de Cliente */}
+      {editItem && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <form onSubmit={handleSaveClient} className="bg-white rounded-3xl p-5 w-full max-w-sm space-y-3 shadow-2xl">
+            <h3 className="font-heading font-bold text-base text-gray-900">Editar dados da cliente</h3>
+            <p className="text-xs text-gray-600">Agendamento {editItem.codigo}</p>
+
+            <div>
+              <label className="text-xs font-bold text-gray-700 block mb-1">Nome da Cliente</label>
+              <input
+                type="text"
+                required
+                value={editNome}
+                onChange={(e) => setEditNome(e.target.value)}
+                className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm font-medium"
+              />
+            </div>
+
+            <PhoneInput
+              id="edit-phone-input"
+              value={editZap}
+              onChange={(f, v) => {
+                setEditZap(f);
+                setEditZapValid(v);
+              }}
+            />
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setEditItem(null)}
+                className="flex-1 h-11 border border-gray-200 rounded-xl text-xs font-bold text-gray-600"
+              >
+                Voltar
+              </button>
+              <button
+                type="submit"
+                disabled={savingEdit}
+                className="flex-1 h-11 bg-[#F7C4D0] text-gray-900 rounded-xl text-xs font-extrabold disabled:opacity-60"
+              >
+                {savingEdit ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

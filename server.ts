@@ -1059,6 +1059,44 @@ app.patch('/api/admin/agendamentos/:id/status', requireAdmin, async (req, res) =
   }
 });
 
+// Editar nome e celular da cliente de um agendamento (online ou manual)
+app.patch('/api/admin/agendamentos/:id/cliente', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const nome = String(req.body?.nome ?? '').trim();
+  const phoneVal = validateWhatsApp(String(req.body?.whatsapp ?? ''));
+
+  if (nome.length < 2) return res.status(400).json({ error: 'Informe o nome da cliente.' });
+  if (!phoneVal.valid) return res.status(400).json({ error: phoneVal.error });
+
+  try {
+    const ag = await getAgendamentoById(id);
+    if (!ag) return res.status(404).json({ error: 'Agendamento não encontrado.' });
+    if (!isInAdminScope(req, ag.manicure_id)) return res.status(403).json({ error: 'Agendamento fora do seu perfil.' });
+
+    const now = new Date().toISOString();
+    let cliente = Array.from(memoryDb.clientes.values()).find((c) => c.whatsapp === phoneVal.clean);
+    if (cliente) {
+      cliente = { ...cliente, nome, atualizado_em: now };
+    } else {
+      cliente = { id: crypto.randomUUID(), nome, whatsapp: phoneVal.clean, criado_em: now, atualizado_em: now };
+    }
+    await persistCliente(cliente);
+    memoryDb.clientes.set(cliente.id, cliente);
+
+    const updated: Agendamento = { ...ag, cliente_id: cliente.id, atualizado_em: now };
+    await persistAgendamentoOrThrow(updated);
+    memoryDb.agendamentos.set(id, updated);
+
+    res.json({
+      success: true,
+      agendamento: { ...updated, cliente_nome: cliente.nome, cliente_whatsapp: cliente.whatsapp },
+    });
+  } catch (error) {
+    console.error('Falha ao editar cliente do agendamento:', error);
+    res.status(502).json({ error: 'Não foi possível salvar os dados da cliente.' });
+  }
+});
+
 // Remarcação pela Manicure (Exceção à regra de 24h)
 app.post('/api/admin/agendamentos/:id/remarcar', requireAdmin, (req, res) => {
   const { id } = req.params;
