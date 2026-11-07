@@ -1,7 +1,11 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { PhoneInput } from '../components/PhoneInput';
 import { Header } from '../components/Header';
-import { CLIENT_DEPOSIT_SEASONAL_MESSAGE, getNowInSaoPaulo, toSaoPauloISO } from '../utils/timezone';
+import { PushActivation } from '../components/PushActivation';
+import { BookingCalendar } from '../components/BookingCalendar';
+import { fetchAvailableSlots } from '../utils/availability';
+import { todayInSaoPaulo } from '../utils/calendar';
+import { CLIENT_DEPOSIT_SEASONAL_MESSAGE, toSaoPauloISO } from '../utils/timezone';
 import { calculateDeposit, getDepositPercentageForDate } from '../utils/rules';
 import { Clock, CheckCircle2, ChevronRight, AlertCircle, Copy, Check, ArrowLeft } from 'lucide-react';
 import type { Manicure } from '../types';
@@ -41,6 +45,8 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
   const [slots, setSlots] = useState<{ time: string; available: boolean }[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<string>('');
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [slotsError, setSlotsError] = useState('');
+  const [showCalendar, setShowCalendar] = useState(false);
 
   const [nome, setNome] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
@@ -65,7 +71,8 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
   const [waitlistPeriod, setWaitlistPeriod] = useState<'manha' | 'tarde' | 'qualquer'>('qualquer');
   const [waitlistSuccess, setWaitlistSuccess] = useState(false);
   const [copiedPix, setCopiedPix] = useState(false);
-  const datePickerRef = useRef<HTMLInputElement>(null);
+  const dateButtonRef = useRef<HTMLButtonElement>(null);
+  const slotsRequestRef = useRef(0);
 
   useEffect(() => {
     fetch(`/api/servicos?manicure=${encodeURIComponent(manicureSlug)}`)
@@ -73,9 +80,7 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
       .then((data) => setServices(data))
       .catch(() => setErrorMsg('Não foi possível carregar o catálogo de serviços.'));
 
-    const now = getNowInSaoPaulo();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    setDate(todayStr);
+    setDate(todayInSaoPaulo());
   }, [manicureSlug]);
 
   useEffect(() => {
@@ -100,15 +105,7 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
       setErrorMsg('Sua reserva expirou. O horário foi liberado.');
 
       if (selectedService && date) {
-        setLoadingSlots(true);
-        fetch(`/api/disponibilidade?data=${date}&servicoId=${selectedService.id}&manicure=${encodeURIComponent(manicureSlug)}`)
-          .then(async (res) => {
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Não foi possível atualizar os horários.');
-            setSlots(data.slots || []);
-          })
-          .catch(() => setErrorMsg('Sua reserva expirou. O horário foi liberado, mas não foi possível atualizar os horários. Tente novamente.'))
-          .finally(() => setLoadingSlots(false));
+        void loadSlots(selectedService.id, date, false);
       }
       return true;
     };
@@ -173,17 +170,7 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
           setStep(2);
           setErrorMsg(statusMessage);
           if (selectedService && date) {
-            try {
-              const availability = await fetch(
-                `/api/disponibilidade?data=${date}&servicoId=${selectedService.id}&manicure=${encodeURIComponent(manicureSlug)}`,
-                { cache: 'no-store' },
-              );
-              const availabilityData = await availability.json();
-              if (!availability.ok) throw new Error(availabilityData.error || 'Não foi possível atualizar os horários.');
-              setSlots(availabilityData.slots || []);
-            } catch {
-              setErrorMsg(`${statusMessage} Não foi possível atualizar os horários. Tente novamente.`);
-            }
+            void loadSlots(selectedService.id, date, false);
           }
           return;
         }
@@ -207,29 +194,26 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
     loadSlots(srv.id, date);
   };
 
-  const loadSlots = async (servicoId: string, dt: string) => {
+  const loadSlots = async (servicoId: string, dt: string, clearMessage = true) => {
     if (!servicoId || !dt) return;
+    const requestId = ++slotsRequestRef.current;
     setLoadingSlots(true);
-    setErrorMsg('');
+    setSlotsError('');
+    setSlots([]);
+    setSelectedSlot('');
+    if (clearMessage) setErrorMsg('');
     try {
-      const res = await fetch(`/api/disponibilidade?data=${dt}&servicoId=${servicoId}&manicure=${encodeURIComponent(manicureSlug)}`);
-      const data = await res.json();
-      if (res.ok) {
-        setSlots(data.slots || []);
-        setSelectedSlot('');
-      } else {
-        setErrorMsg(data.error || 'Erro ao carregar horários livres.');
-      }
+      const availableSlots = await fetchAvailableSlots(dt, servicoId, manicureSlug);
+      if (requestId === slotsRequestRef.current) setSlots(availableSlots.filter((slot) => slot.available));
     } catch {
-      setErrorMsg('Falha ao conectar com o servidor.');
+      if (requestId === slotsRequestRef.current) setSlotsError('Não foi possível carregar os horários. Verifique sua conexão e tente novamente.');
     } finally {
-      setLoadingSlots(false);
+      if (requestId === slotsRequestRef.current) setLoadingSlots(false);
     }
   };
 
   const handleDateChange = (newDate: string) => {
-    const now = getNowInSaoPaulo();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const todayStr = todayInSaoPaulo();
     if (newDate < todayStr) {
       setErrorMsg('Não é possível agendar em uma data passada.');
       setDate(todayStr);
@@ -248,20 +232,10 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
     return `${day}/${month}/${year.slice(-2)}`;
   };
 
-  const getTodayString = () => {
-    const now = getNowInSaoPaulo();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  };
-
-  const openDatePicker = () => {
-    const picker = datePickerRef.current;
-    if (!picker) return;
-    if (typeof picker.showPicker === 'function') {
-      picker.showPicker();
-    } else {
-      picker.click();
-    }
-  };
+  const closeCalendar = useCallback(() => {
+    setShowCalendar(false);
+    dateButtonRef.current?.focus();
+  }, []);
 
   const handleConfirmBooking = async () => {
     if (!isPhoneValid || !nome.trim() || !selectedService || !selectedSlot) {
@@ -325,7 +299,7 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
     }
 
     try {
-      const res = await fetch('/api/lista-espera', {
+      const res = await fetch(`/api/lista-espera?manicure=${encodeURIComponent(manicureSlug)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -482,24 +456,30 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
             </label>
             <div>
               <button
+                id="data-agendamento"
+                ref={dateButtonRef}
                 type="button"
-                onClick={openDatePicker}
+                onClick={() => setShowCalendar(true)}
                 className="w-full h-12 px-3.5 text-left rounded-2xl border border-pink-200 bg-white text-base font-semibold text-gray-900 outline-none focus:border-[#802334] focus:ring-2 focus:ring-[#F7C4D0]/50"
-                aria-label="Abrir seletor de data"
+                aria-label={`Escolher data, selecionada ${formatDateForDisplay(date)}`}
+                aria-haspopup="dialog"
+                aria-expanded={showCalendar}
               >
                 {formatDateForDisplay(date)}
               </button>
-              <input
-                id="data-agendamento"
-                type="date"
-                ref={datePickerRef}
-                value={date}
-                min={getTodayString()}
-                onChange={(e) => handleDateChange(e.target.value)}
-                aria-label="Selecionar data do agendamento"
-                className="sr-only"
-              />
             </div>
+            {showCalendar && (
+              <BookingCalendar
+                date={date}
+                serviceId={selectedService.id}
+                manicureSlug={manicureSlug}
+                onClose={closeCalendar}
+                onSelect={(newDate) => {
+                  closeCalendar();
+                  handleDateChange(newDate);
+                }}
+              />
+            )}
           </div>
 
           <div>
@@ -510,6 +490,13 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
             {loadingSlots ? (
               <div className="p-8 text-center text-xs text-gray-500 font-medium">
                 Calculando disponibilidade em tempo real...
+              </div>
+            ) : slotsError ? (
+              <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-center text-xs font-semibold text-red-800">
+                <p>{slotsError}</p>
+                <button type="button" onClick={() => loadSlots(selectedService.id, date)} className="mt-2 min-h-12 rounded-xl border border-red-300 bg-white px-4 font-bold">
+                  Tentar novamente
+                </button>
               </div>
             ) : slots.length === 0 ? (
               <div className="p-4 bg-gray-50 rounded-2xl border border-dashed border-gray-300 text-center space-y-2.5">
@@ -729,6 +716,7 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
           )}
 
           <div className="pt-2 space-y-2">
+            <PushActivation role="cliente" nome={nome} whatsapp={whatsapp} bookingId={bookingResult.id} />
             <button
               type="button"
               onClick={onGoToRules}

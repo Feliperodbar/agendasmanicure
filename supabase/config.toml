@@ -4,6 +4,12 @@
 # working directory name when running `supabase init`.
 project_id = "agendasmanicure"
 
+[functions.push-agendamentos]
+verify_jwt = false
+
+[functions.processar-lembretes]
+verify_jwt = false
+
 [api]
 enabled = true
 # Port to use for the API URL.

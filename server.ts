@@ -3,11 +3,12 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, listClientesByIds, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistServicoOrThrow, refreshServicos, nextBookingCode, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistNotificacao, deleteSessao, countAgendamentosByManicure, deleteManicureCascade, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, listClientesByIds, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistServicoOrThrow, refreshServicos, nextBookingCode, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistListaEsperaOrThrow, persistNotificacao, deleteSessao, countAgendamentosByManicure, deleteManicureCascade, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots, BusinessHoursMap } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor, getDepositPercentageForDate } from './src/utils/rules.js';
 import { getNowInSaoPaulo, toSaoPauloISO, formatInSaoPaulo } from './src/utils/timezone.js';
+import { isValidPushSubscription } from './src/server/push-subscriptions.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -106,6 +107,100 @@ app.get('/api/admin/session', async (req, res) => {
     return res.json({ isLoggedIn: false });
   }
   res.json({ isLoggedIn: true, isOwner: !sessao.manicure_id });
+});
+
+app.get('/api/push/config', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const publicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY;
+  if (!publicKey || !process.env.PUSH_WEBHOOK_SECRET || !supabaseClient) {
+    return res.status(503).json({ error: 'Notificações não configuradas neste ambiente.' });
+  }
+  res.json({ publicKey });
+});
+
+app.post('/api/push/assinaturas', async (req, res) => {
+  if (!supabaseClient) return res.status(503).json({ error: 'Notificações não configuradas neste ambiente.' });
+  const { subscription, papel, nome, whatsapp } = req.body ?? {};
+  if (!isValidPushSubscription(subscription) || !['cliente', 'manicure'].includes(papel)) {
+    return res.status(400).json({ error: 'Assinatura de notificações inválida.' });
+  }
+  let clienteId: string | null = null;
+  let manicureId: string | null = null;
+  try {
+    if (papel === 'manicure') {
+      const token = req.cookies?.nm_session;
+      const tokenHash = typeof token === 'string' ? crypto.createHash('sha256').update(token).digest('hex') : '';
+      const session = tokenHash ? memoryDb.sessoes.get(tokenHash) || await findSupabaseSession(tokenHash) : null;
+      if (!session || new Date(session.expira_em) <= new Date()) {
+        return res.status(403).json({ error: 'Entre com seu PIN para ativar os avisos.' });
+      }
+      if (session.manicure_id) {
+        manicureId = session.manicure_id;
+      } else {
+        const selected = typeof req.body.manicureId === 'string' ? memoryDb.manicures.get(req.body.manicureId) : null;
+        if (!selected?.active) return res.status(400).json({ error: 'Escolha uma manicure ativa para os avisos.' });
+        manicureId = selected.id;
+      }
+    } else {
+      const phone = validateWhatsApp(typeof whatsapp === 'string' ? whatsapp : '');
+      const client = phone.valid ? await getClienteByWhatsApp(phone.clean) : null;
+      if (!client || typeof nome !== 'string' || client.nome.toLowerCase() !== nome.trim().toLowerCase()) {
+        return res.status(403).json({ error: 'Nome e WhatsApp não conferem.' });
+      }
+      clienteId = client.id;
+    }
+
+    const existing = await supabaseClient.from('push_assinaturas')
+      .select('p256dh, auth, ativo, papel, cliente_id, manicure_id').eq('endpoint', subscription.endpoint).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data && (existing.data.p256dh !== subscription.keys.p256dh || existing.data.auth !== subscription.keys.auth)) {
+      return res.status(409).json({ error: 'Não foi possível vincular esta assinatura ao aparelho.' });
+    }
+    if (req.body?.checkOnly === true) {
+      return res.json({
+        active: Boolean(existing.data?.ativo && existing.data.papel === papel &&
+          existing.data.cliente_id === clienteId && existing.data.manicure_id === manicureId),
+      });
+    }
+    const { data: saved, error } = await supabaseClient.from('push_assinaturas').upsert({
+      endpoint: subscription.endpoint,
+      p256dh: subscription.keys.p256dh,
+      auth: subscription.keys.auth,
+      papel,
+      cliente_id: clienteId,
+      manicure_id: manicureId,
+      user_agent: req.get('user-agent')?.slice(0, 512) || null,
+      ativo: true,
+    }, { onConflict: 'endpoint' }).select('id').single();
+    if (error) throw error;
+    if (papel === 'cliente' && typeof req.body.bookingId === 'string') {
+      const booking = await getAgendamentoById(req.body.bookingId);
+      const age = booking ? Date.now() - Date.parse(booking.criado_em) : NaN;
+      if (booking?.cliente_id === clienteId && age >= 0 && age < 24 * 60 * 60 * 1000) {
+        const pushSecret = process.env.PUSH_WEBHOOK_SECRET;
+        const projectUrl = process.env.SUPABASE_URL;
+        if (!pushSecret || !projectUrl) {
+          return res.json({ success: true, warning: 'Notificações ativadas, mas a confirmação inicial não pôde ser enviada.' });
+        }
+        try {
+          const result = await fetch(`${projectUrl.replace(/\/$/, '')}/functions/v1/push-agendamentos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-push-secret': pushSecret },
+            body: JSON.stringify({ action: 'activation', bookingId: booking.id, subscriptionId: saved.id }),
+            signal: AbortSignal.timeout(10000),
+          });
+          if (!result.ok) throw new Error(`Push inicial: HTTP ${result.status}`);
+        } catch (error) {
+          console.error('Falha ao enviar confirmação inicial:', error);
+          return res.json({ success: true, warning: 'Notificações ativadas, mas a confirmação inicial não pôde ser enviada.' });
+        }
+      }
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Falha ao ativar notificações:', error);
+    res.status(502).json({ error: 'Não foi possível ativar as notificações. Tente novamente.' });
+  }
 });
 
 // -------------------------------------------------------------
@@ -724,15 +819,17 @@ app.post('/api/agendamentos/:id/cancelar-cliente', async (req, res) => {
 });
 
 // Lista de Espera
-app.post('/api/lista-espera', (req, res) => {
+app.post('/api/lista-espera', async (req, res) => {
   const { nome, whatsapp, data, periodo } = req.body;
   const phoneVal = validateWhatsApp(whatsapp || '');
   if (!phoneVal.valid) {
     return res.status(400).json({ error: phoneVal.error });
   }
 
-  const id = `fila-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  memoryDb.listaEspera.set(id, {
+  const manicure = resolveManicure(req);
+  if (!manicure) return res.status(404).json({ error: 'Manicure não encontrada.' });
+  const id = crypto.randomUUID();
+  const entry = {
     id,
     nome: (nome || '').trim(),
     whatsapp: phoneVal.clean,
@@ -740,8 +837,15 @@ app.post('/api/lista-espera', (req, res) => {
     periodo: periodo || 'qualquer',
     notificado: false,
     criado_em: new Date().toISOString(),
-  });
-  void persistListaEspera(memoryDb.listaEspera.get(id)!);
+    manicure_id: manicure.id,
+  };
+  try {
+    await persistListaEsperaOrThrow(entry);
+    memoryDb.listaEspera.set(id, entry);
+  } catch (error) {
+    console.error('Falha ao salvar entrada na lista de espera:', error);
+    return res.status(502).json({ error: 'Não foi possível entrar na lista de espera.' });
+  }
 
   res.status(201).json({ success: true, id });
 });

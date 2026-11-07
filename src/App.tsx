@@ -10,17 +10,19 @@ import { AdminBloqueiosView } from './views/AdminBloqueiosView';
 import { AdminHorariosView } from './views/AdminHorariosView';
 import { AdminManicuresView } from './views/AdminManicuresView';
 import { HomeView } from './views/HomeView';
+import { PushActivation } from './components/PushActivation';
 import type { Manicure } from './types';
 
 export default function App() {
-  const [mode, setMode] = useState<'client' | 'admin'>('client');
+  const pushTarget = new URLSearchParams(window.location.search).get('push');
+  const [mode, setMode] = useState<'client' | 'admin'>(pushTarget === 'admin' ? 'admin' : 'client');
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
-  const [clientTab, setClientTab] = useState<ClientTab>('agendar');
+  const [clientTab, setClientTab] = useState<ClientTab>(pushTarget === 'meus-horarios' ? 'meus-horarios' : 'agendar');
   const [adminTab, setAdminTab] = useState<AdminTab>('agenda');
   const [manicures, setManicures] = useState<Manicure[]>([]);
   const [selectedManicure, setSelectedManicure] = useState<Manicure | null>(null);
-  const [showHome, setShowHome] = useState(true);
+  const [showHome, setShowHome] = useState(pushTarget !== 'meus-horarios');
   const [rulesBack, setRulesBack] = useState(false);
 
   // Ao carregar, verifica se já existe sessão de admin ativa
@@ -142,6 +144,17 @@ export default function App() {
               />
             ) : (
               <div>
+                <div className="space-y-2 px-4 pt-3">
+                  {isOwner && (
+                    <label className="block text-xs font-semibold text-gray-700">
+                      Receber avisos da manicure:
+                      <select value={selectedManicure?.id || ''} onChange={(event) => setSelectedManicure(manicures.find((profile) => profile.id === event.target.value) || null)} className="mt-1 h-12 w-full rounded-xl border border-pink-200 bg-white px-3 text-sm">
+                        {manicures.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  {(!isOwner || selectedManicure) && <PushActivation role="manicure" manicureId={isOwner ? selectedManicure?.id : undefined} />}
+                </div>
                 {adminTab === 'agenda' && (
                   <AdminAgendaView
                     mode={mode}

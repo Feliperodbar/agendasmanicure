@@ -83,6 +83,34 @@ test('respeita buffer de 10 min entre agendamentos', () => {
   assert.ok(slotTimes.includes('11:30'));
 });
 
+test('bloqueio integral e bloqueio que cobre todo o expediente deixam o dia indisponível', () => {
+  for (const block of [
+    { data_inicio: '2026-11-09T00:00:00.000-03:00', data_fim: '2026-11-09T23:59:00.000-03:00', dia_inteiro: true },
+    { data_inicio: '2026-11-09T09:00:00.000-03:00', data_fim: '2026-11-09T20:00:00.000-03:00' },
+  ]) {
+    assert.deepEqual(calculateAvailableSlots({
+      dateStr: '2026-11-09',
+      serviceDurationMinutes: 60,
+      blocks: [block],
+      nowReference: new Date('2026-11-01T08:00:00-03:00'),
+    }), []);
+  }
+});
+
+test('um dia inteiramente ocupado, incluindo o buffer, não tem horários livres', () => {
+  const slots = calculateAvailableSlots({
+    dateStr: '2026-11-09',
+    serviceDurationMinutes: 60,
+    existingBookings: [{
+      data_hora_inicio: '2026-11-09T09:10:00.000-03:00',
+      data_hora_fim: '2026-11-09T18:00:00.000-03:00',
+      status: 'confirmado',
+    }],
+    nowReference: new Date('2026-11-01T08:00:00-03:00'),
+  });
+  assert.deepEqual(slots, []);
+});
+
 test('agendamento cancelado libera o horário na hora', () => {
   const slots = calculateAvailableSlots({
     dateStr: '2026-11-09',

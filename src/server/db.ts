@@ -624,6 +624,14 @@ export const persistCliente = (value: Cliente) => supabaseUpsert('clientes', val
 export const persistAgendamento = (value: Agendamento) => supabaseUpsert('agendamentos', value);
 export const persistBloqueio = (value: Bloqueio) => supabaseUpsert('bloqueios', value);
 export const persistListaEspera = (value: ListaEspera) => supabaseUpsert('lista_espera', value);
+export async function persistListaEsperaOrThrow(value: ListaEspera): Promise<void> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') throw new Error('Supabase não configurado no ambiente de produção.');
+    return;
+  }
+  const { error } = await supabaseClient.from('lista_espera').upsert(value);
+  if (error) throw new Error(`Supabase lista_espera upsert failed: ${error.message}`);
+}
 export const persistNotificacao = (value: Notificacao) => supabaseUpsert('notificacoes', value);
 export const persistManicure = (value: Manicure) => supabaseUpsert('manicures', value);
 export const deleteAgendamento = (id: string) => supabaseDelete('agendamentos', id);

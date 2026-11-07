@@ -30,8 +30,18 @@ interface AdminAgendaViewProps {
 }
 
 export function AdminAgendaView({ mode, onModeChange, onLogout }: AdminAgendaViewProps) {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDay, setSelectedDay] = useState<number>(new Date().getDate());
+  const [initialDate] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const day = params.get('push') === 'admin' ? params.get('dia') : null;
+    if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
+      const [year, month, date] = day.split('-').map(Number);
+      const parsed = new Date(year, month - 1, date, 12);
+      if (parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === date) return parsed;
+    }
+    return new Date();
+  });
+  const [currentDate, setCurrentDate] = useState(initialDate);
+  const [selectedDay, setSelectedDay] = useState<number>(initialDate.getDate());
   const [monthStatus, setMonthStatus] = useState<Record<number, DayStatus>>({});
 
   const [dayBookings, setDayBookings] = useState<any[]>([]);

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { PhoneInput } from '../components/PhoneInput';
 import { Header } from '../components/Header';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { PushActivation } from '../components/PushActivation';
 import { formatInSaoPaulo, SEASONAL_WARNING_MESSAGE } from '../utils/timezone';
 import { Calendar, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
 
@@ -161,6 +162,7 @@ export function ClientMyBookingsView({ mode, onModeChange }: ClientMyBookingsVie
         {hasSearched && (
           <div className="space-y-3 pt-2">
             <h3 className="font-heading font-bold text-base text-gray-900">Seus Agendamentos</h3>
+            {bookings.length > 0 && <PushActivation role="cliente" nome={nome} whatsapp={whatsapp} />}
 
             {bookings.length === 0 ? (
               <div className="p-8 text-center bg-white rounded-3xl border border-pink-100 text-xs text-gray-500 font-medium">
