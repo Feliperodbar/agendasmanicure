@@ -1,0 +1,18 @@
+- main [ref=e4]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - img "Nailhub" [ref=e9]
+      - heading "Nailhub" [level=1] [ref=e17]
+      - paragraph [ref=e18]: Escolha a manicure para ver os serviços e horários disponíveis.
+    - generic [ref=e19]:
+      - heading "Escolha sua manicure" [level=2] [ref=e20]
+      - button [ref=e21]:
+        - generic [ref=e26]:
+          - strong [ref=e27]: Natália Marcela
+          - generic [ref=e28]: "@nataliamarcelanail"
+        - generic [aria-hidden] [ref=e32]: ›
+  - navigation "Navegação da Cliente" [ref=e33]:
+    - generic [ref=e34]:
+      - button "Agendar" [ref=e35]
+      - button "Meus horários" [ref=e39]
+      - button "Área da manicure" [ref=e42]

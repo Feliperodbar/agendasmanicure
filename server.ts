@@ -416,7 +416,6 @@ app.get('/api/disponibilidade', async (req, res) => {
   nextDate.setUTCDate(nextDate.getUTCDate() + 1);
   let dayBookings: Agendamento[];
   try {
-    await expirePixBookings();
     dayBookings = await listAgendamentosInRange(
       toSaoPauloISO(data, '00:00'),
       toSaoPauloISO(nextDate.toISOString().slice(0, 10), '00:00'),
@@ -474,9 +473,7 @@ app.get('/api/disponibilidade/mes', async (req, res) => {
   const endDate = new Date(Date.UTC(year, monthNumber, 1)).toISOString().slice(0, 10);
   const hoursConfig = configValue(req, 'horarios_funcionamento', undefined);
   const bufferMinutes = Number(configValue(req, 'buffer_minutos', 10));
-
   try {
-    await expirePixBookings();
     const monthBookings = await listAgendamentosInRange(
       toSaoPauloISO(startDate, '00:00'),
       toSaoPauloISO(endDate, '00:00'),

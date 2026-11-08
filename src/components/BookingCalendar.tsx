@@ -43,7 +43,12 @@ export function BookingCalendar({ date, serviceId, manicureSlug, onSelect, onClo
 
     const loadMonth = async () => {
       try {
-        const days = await fetchAvailableDays(month, serviceId, manicureSlug, controller.signal);
+        const days = await fetchAvailableDays(month, serviceId, manicureSlug, controller.signal, ({ date: day, available, error }) => {
+          setStatuses((current) => ({
+            ...current,
+            [day]: available ? 'available' : error ? 'error' : 'unavailable',
+          }));
+        });
         if (!controller.signal.aborted) {
           setStatuses(Object.fromEntries(days.map(({ date: day, available, error }) => [
             day,
@@ -61,7 +66,7 @@ export function BookingCalendar({ date, serviceId, manicureSlug, onSelect, onClo
     return () => controller.abort();
   }, [month, serviceId, manicureSlug, retry]);
 
-  const hasErrors = Object.values(statuses).includes('error');
+  const hasErrors = !loading && Object.values(statuses).includes('error');
 
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="calendar-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

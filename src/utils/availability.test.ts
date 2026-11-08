@@ -45,10 +45,14 @@ test('consulta os dias individualmente se a rota mensal falhar', async (t) => {
   });
   t.mock.method(console, 'warn', () => {});
 
-  const days = await fetchAvailableDays('2026-12', '1', 'manicure');
+  const updates: string[] = [];
+  const days = await fetchAvailableDays('2026-12', '1', 'manicure', undefined, (day) => {
+    updates.push(day.date);
+  });
   assert.equal(days.length, 31);
   assert.equal(days.every((day) => day.available && !day.error), true);
   assert.equal(fetchMock.mock.callCount(), 32);
+  assert.equal(updates.length, 31);
 });
 
 test('marca somente os dias que também falharem na consulta individual', async (t) => {

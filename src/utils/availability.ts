@@ -46,12 +46,13 @@ export async function fetchAvailableDays(
   serviceId: string,
   manicureSlug: string,
   signal?: AbortSignal,
+  onDay?: (day: AvailableDay) => void,
 ): Promise<AvailableDay[]> {
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (signal?.aborted) abort();
   else signal?.addEventListener('abort', abort, { once: true });
-  const timeout = setTimeout(abort, 15000);
+  const timeout = setTimeout(abort, 2000);
 
   try {
     const params = new URLSearchParams({ mes: month, servicoId: serviceId, manicure: manicureSlug });
@@ -84,16 +85,20 @@ export async function fetchAvailableDays(
         if (!day) return;
         try {
           const slots = await fetchAvailableSlots(day, serviceId, manicureSlug, signal);
-          results.set(day, { date: day, available: slots.some((slot) => slot.available) });
+          const result = { date: day, available: slots.some((slot) => slot.available) };
+          results.set(day, result);
+          onDay?.(result);
         } catch (dayError) {
           if (signal?.aborted) return;
           firstDayError ??= dayError;
-          results.set(day, { date: day, available: false, error: true });
+          const result = { date: day, available: false, error: true };
+          results.set(day, result);
+          onDay?.(result);
         }
       }
     };
 
-    await Promise.all(Array.from({ length: Math.min(4, pending.length) }, loadDays));
+    await Promise.all(Array.from({ length: Math.min(6, pending.length) }, loadDays));
     if (firstDayError) {
       console.error('Não foi possível consultar alguns dias da disponibilidade.', firstDayError);
     }
