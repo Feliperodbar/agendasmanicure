@@ -447,6 +447,79 @@ app.get('/api/disponibilidade', async (req, res) => {
   res.json({ slots });
 });
 
+app.get('/api/disponibilidade/mes', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const { mes, servicoId } = req.query as { mes?: string; servicoId?: string };
+  const monthMatch = /^(\d{4})-(\d{2})$/.exec(mes || '');
+  if (!monthMatch || !servicoId) {
+    return res.status(400).json({ error: 'Mês e ID do serviço são obrigatórios.' });
+  }
+
+  const year = Number(monthMatch[1]);
+  const monthNumber = Number(monthMatch[2]);
+  if (year < 1000 || monthNumber < 1 || monthNumber > 12) {
+    return res.status(400).json({ error: 'Mês inválido.' });
+  }
+
+  const servico = memoryDb.servicos.get(servicoId);
+  if (!servico) {
+    return res.status(404).json({ error: 'Serviço não encontrado.' });
+  }
+  const manicure = resolveManicure(req);
+  if (!manicure || (servico.manicure_id && servico.manicure_id !== manicure.id)) {
+    return res.status(404).json({ error: 'Manicure ou serviço não encontrado.' });
+  }
+
+  const startDate = `${monthMatch[1]}-${monthMatch[2]}-01`;
+  const endDate = new Date(Date.UTC(year, monthNumber, 1)).toISOString().slice(0, 10);
+  const hoursConfig = configValue(req, 'horarios_funcionamento', undefined);
+  const bufferMinutes = Number(configValue(req, 'buffer_minutos', 10));
+
+  try {
+    await expirePixBookings();
+    const monthBookings = await listAgendamentosInRange(
+      toSaoPauloISO(startDate, '00:00'),
+      toSaoPauloISO(endDate, '00:00'),
+      manicure.id,
+    ) || Array.from(memoryDb.agendamentos.values()).filter((booking) =>
+      new Date(booking.data_hora_inicio) >= new Date(toSaoPauloISO(startDate, '00:00')) &&
+      new Date(booking.data_hora_inicio) < new Date(toSaoPauloISO(endDate, '00:00')) &&
+      (!booking.manicure_id || booking.manicure_id === manicure.id)
+    );
+
+    const dayCount = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+    const days = Array.from({ length: dayCount }, (_, index) => {
+      const day = `${monthMatch[1]}-${monthMatch[2]}-${String(index + 1).padStart(2, '0')}`;
+      const nextDayDate = new Date(`${day}T12:00:00Z`);
+      nextDayDate.setUTCDate(nextDayDate.getUTCDate() + 1);
+      const dayStart = toSaoPauloISO(day, '00:00');
+      const dayEnd = toSaoPauloISO(nextDayDate.toISOString().slice(0, 10), '00:00');
+      const dayBookings = monthBookings.filter((booking) =>
+        new Date(booking.data_hora_inicio) >= new Date(dayStart) &&
+        new Date(booking.data_hora_inicio) < new Date(dayEnd)
+      );
+      const dayBlocks = Array.from(memoryDb.bloqueios.values()).filter((block) =>
+        (!block.manicure_id || block.manicure_id === manicure.id) &&
+        (block.data_inicio.startsWith(day) || block.data_fim.startsWith(day) || block.dia_inteiro)
+      );
+      const slots = calculateAvailableSlots({
+        dateStr: day,
+        serviceDurationMinutes: servico.duracao_minutos,
+        businessHours: hoursConfig as string | BusinessHoursMap | undefined,
+        bufferMinutes,
+        existingBookings: dayBookings,
+        blocks: dayBlocks,
+      });
+      return { date: day, available: slots.some((slot) => slot.available) };
+    });
+
+    res.json({ days });
+  } catch (error) {
+    console.error('Falha ao carregar disponibilidade mensal:', error);
+    return res.status(502).json({ error: 'Não foi possível verificar os dias disponíveis.' });
+  }
+});
+
 // Criar Agendamento (3º Passo) com Anti-Double-Booking e snapshots
 app.post('/api/agendamentos', async (req, res) => {
   const { servicoId, data, horario, nomeCliente, whatsappCliente, observacoes } = req.body;

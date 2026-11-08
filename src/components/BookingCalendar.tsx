@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { fetchAvailableSlots } from '../utils/availability';
+import { fetchAvailableDays } from '../utils/availability';
 import { monthDates, shiftMonth, todayInSaoPaulo } from '../utils/calendar';
 
 interface BookingCalendarProps {
@@ -41,22 +41,23 @@ export function BookingCalendar({ date, serviceId, manicureSlug, onSelect, onClo
     setStatuses({});
     setLoading(true);
 
-    const worker = async () => {
-      while (pending.length && !controller.signal.aborted) {
-        const day = pending.shift();
-        if (!day) break;
-        try {
-          const slots = await fetchAvailableSlots(day, serviceId, manicureSlug, controller.signal);
-          if (!controller.signal.aborted) {
-            setStatuses((current) => ({ ...current, [day]: slots.some((slot) => slot.available) ? 'available' : 'unavailable' }));
-          }
-        } catch {
-          if (!controller.signal.aborted) setStatuses((current) => ({ ...current, [day]: 'error' }));
+    const loadMonth = async () => {
+      try {
+        const days = await fetchAvailableDays(month, serviceId, manicureSlug, controller.signal);
+        if (!controller.signal.aborted) {
+          setStatuses(Object.fromEntries(days.map(({ date: day, available }) => [
+            day,
+            available ? 'available' : 'unavailable',
+          ])));
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setStatuses(Object.fromEntries(pending.map((day) => [day, 'error'])));
         }
       }
+      if (!controller.signal.aborted) setLoading(false);
     };
-    void Promise.all(Array.from({ length: Math.min(4, pending.length) }, worker))
-      .then(() => { if (!controller.signal.aborted) setLoading(false); });
+    void loadMonth();
     return () => controller.abort();
   }, [month, serviceId, manicureSlug, retry]);
 
