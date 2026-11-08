@@ -112,8 +112,14 @@ app.get('/api/admin/session', async (req, res) => {
 app.get('/api/push/config', (_req, res) => {
   res.set('Cache-Control', 'no-store');
   const publicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY;
-  if (!publicKey || !process.env.PUSH_WEBHOOK_SECRET || !supabaseClient) {
-    return res.status(503).json({ error: 'Notificações não configuradas neste ambiente.' });
+  const missing: string[] = [];
+  if (!publicKey) missing.push('VAPID_PUBLIC_KEY');
+  if (!process.env.PUSH_WEBHOOK_SECRET) missing.push('PUSH_WEBHOOK_SECRET');
+  if (!supabaseClient) missing.push('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY (ou SUPABASE_SECRET_KEY)');
+  if (missing.length > 0) {
+    return res.status(503).json({
+      error: `Notificações não configuradas no servidor. Verifique: ${missing.join('; ')}.`,
+    });
   }
   res.json({ publicKey });
 });

@@ -35,7 +35,12 @@ export function PushActivation(props: Props) {
     void fetch('/api/push/config', { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
         const config = await response.json();
-        if (!response.ok || typeof config.publicKey !== 'string') throw new Error(config.error || 'Notificações indisponíveis.');
+        if (!response.ok || typeof config.publicKey !== 'string') {
+          if (!controller.signal.aborted) {
+            setMessage(typeof config.error === 'string' ? config.error : 'Notificações indisponíveis neste ambiente.');
+          }
+          return;
+        }
         setPublicKey(config.publicKey);
       })
       .catch(() => {
