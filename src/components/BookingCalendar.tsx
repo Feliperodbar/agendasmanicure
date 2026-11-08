@@ -45,9 +45,9 @@ export function BookingCalendar({ date, serviceId, manicureSlug, onSelect, onClo
       try {
         const days = await fetchAvailableDays(month, serviceId, manicureSlug, controller.signal);
         if (!controller.signal.aborted) {
-          setStatuses(Object.fromEntries(days.map(({ date: day, available }) => [
+          setStatuses(Object.fromEntries(days.map(({ date: day, available, error }) => [
             day,
-            available ? 'available' : 'unavailable',
+            available ? 'available' : error ? 'error' : 'unavailable',
           ])));
         }
       } catch {
