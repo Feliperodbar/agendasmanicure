@@ -111,8 +111,27 @@ export function PushActivation(props: Props) {
         return;
       }
       if (!registration) throw new Error('Não foi possível iniciar as notificações.');
-      const subscription = existingSubscription ||
-        await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: decodeVapidKey(publicKey) });
+      let subscription = existingSubscription;
+      if (!subscription) {
+        try {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: decodeVapidKey(publicKey),
+          });
+        } catch (err) {
+          // Se houver uma inscrição desincronizada no navegador, tenta limpar e recriar
+          const oldSub = await registration.pushManager.getSubscription().catch(() => null);
+          if (oldSub) {
+            await oldSub.unsubscribe().catch(() => {});
+            subscription = await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: decodeVapidKey(publicKey),
+            });
+          } else {
+            throw err;
+          }
+        }
+      }
       setExistingSubscription(subscription);
       const saved = await fetch('/api/push/assinaturas', {
         method: 'POST',
@@ -125,7 +144,12 @@ export function PushActivation(props: Props) {
       setActive(true);
       if (typeof result.warning === 'string') setMessage(result.warning);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Não foi possível ativar as notificações.');
+      const rawMsg = error instanceof Error ? error.message : '';
+      if (/push service error/i.test(rawMsg)) {
+        setMessage('O serviço de notificações do aparelho não respondeu. Tente desativar a Economia de Bateria, mudar para o 4G/5G ou reiniciar o navegador.');
+      } else {
+        setMessage(rawMsg || 'Não foi possível ativar as notificações.');
+      }
     } finally {
       setLoading(false);
     }
