@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/push/:match*",
+      "destination": "/api/[...path]"
+    }
+  ]
+}
