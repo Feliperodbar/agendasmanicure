@@ -209,6 +209,33 @@ app.post('/api/push/assinaturas', async (req, res) => {
   }
 });
 
+// Disparo direto de eventos push para a Edge Function
+async function triggerPushEvent(type: 'INSERT' | 'UPDATE', record: unknown, old_record: unknown = null): Promise<void> {
+  const pushSecret = process.env.PUSH_WEBHOOK_SECRET;
+  const projectUrl = process.env.SUPABASE_URL;
+  if (!pushSecret || !projectUrl) return;
+  try {
+    const payload = {
+      type,
+      table: 'agendamentos',
+      schema: 'public',
+      record,
+      old_record,
+    };
+    await fetch(`${projectUrl.replace(/\/$/, '')}/functions/v1/push-agendamentos`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-push-secret': pushSecret,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(6000),
+    });
+  } catch (err) {
+    console.error('Falha ao disparar push event:', err);
+  }
+}
+
 // -------------------------------------------------------------
 // 1. ROTAS PÚBLICAS DO CLIENTE
 // -------------------------------------------------------------
@@ -662,6 +689,7 @@ app.post('/api/agendamentos', async (req, res) => {
   }
 
   memoryDb.agendamentos.set(agendamentoId, novoAgendamento);
+  void triggerPushEvent('INSERT', novoAgendamento, null);
 
   // Registra notificações simuladas
   const confirmationNotification: Notificacao = {
@@ -842,6 +870,7 @@ app.post('/api/agendamentos/:id/cancelar-cliente', async (req, res) => {
   try {
     await persistAgendamentoOrThrow(cancelledBooking);
     memoryDb.agendamentos.set(id, cancelledBooking);
+    void triggerPushEvent('UPDATE', cancelledBooking, ag);
   } catch (error) {
     console.error('Falha ao salvar cancelamento do agendamento:', error);
     return res.status(502).json({ error: 'Não foi possível cancelar o agendamento.' });
@@ -1213,6 +1242,7 @@ app.patch('/api/admin/agendamentos/:id/status', requireAdmin, async (req, res) =
         await expirePixBookings();
         return res.status(410).json({ error: 'A reserva não pode mais ser confirmada; o prazo do Pix expirou ou ela já foi encerrada.' });
       }
+      void triggerPushEvent('UPDATE', confirmed, ag);
       return res.json({ success: true, agendamento: confirmed });
     }
 
@@ -1247,6 +1277,7 @@ app.patch('/api/admin/agendamentos/:id/status', requireAdmin, async (req, res) =
 
     await persistAgendamentoOrThrow(updatedAgendamento);
     memoryDb.agendamentos.set(id, updatedAgendamento);
+    void triggerPushEvent('UPDATE', updatedAgendamento, ag);
     res.json({ success: true, agendamento: updatedAgendamento });
   } catch (error) {
     console.error('Falha ao atualizar status do agendamento:', error);
@@ -1298,6 +1329,7 @@ app.post('/api/admin/agendamentos/:id/remarcar', requireAdmin, (req, res) => {
   if (!ag) return res.status(404).json({ error: 'Agendamento não encontrado.' });
   if (!isInAdminScope(req, ag.manicure_id)) return res.status(403).json({ error: 'Agendamento fora do seu perfil.' });
 
+  const oldAg = { ...ag };
   const startISO = toSaoPauloISO(novaData, novoHorario);
   const [h, m] = novoHorario.split(':').map(Number);
   const fimMinTotal = h * 60 + m + ag.duracao_snapshot;
@@ -1309,6 +1341,7 @@ app.post('/api/admin/agendamentos/:id/remarcar', requireAdmin, (req, res) => {
   ag.data_hora_fim = endISO;
   ag.atualizado_em = new Date().toISOString();
   void persistAgendamento(ag);
+  void triggerPushEvent('UPDATE', ag, oldAg);
 
   // Notificação simulada
   memoryDb.notificacoes.set(`notif-${Date.now()}-remarc`, {
@@ -1395,6 +1428,7 @@ app.post('/api/admin/agendamentos/manual', requireAdmin, async (req, res) => {
   };
   memoryDb.agendamentos.set(id, ag);
   await persistAgendamento(ag);
+  void triggerPushEvent('INSERT', ag, null);
 
   res.status(201).json({ success: true, agendamento: ag });
 });

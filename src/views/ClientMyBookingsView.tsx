@@ -4,7 +4,7 @@ import { Header } from '../components/Header';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { PushActivation } from '../components/PushActivation';
 import { formatInSaoPaulo, SEASONAL_WARNING_MESSAGE } from '../utils/timezone';
-import { Calendar, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Calendar, Clock, AlertCircle, CheckCircle2, MessageCircle } from 'lucide-react';
 
 interface ClientMyBookingsViewProps {
   mode: 'client' | 'admin';
@@ -217,6 +217,26 @@ export function ClientMyBookingsView({ mode, onModeChange }: ClientMyBookingsVie
                           : 'Sinal não exigido'}
                       </span>
                     </div>
+
+                    {isPendente && !isCancelado && (
+                      <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-2xl text-xs space-y-2 text-left">
+                        <p className="font-bold text-emerald-950 flex items-center gap-1.5">
+                          <MessageCircle size={14} className="text-emerald-700 shrink-0" />
+                          Aguardando comprovante do sinal
+                        </p>
+                        <a
+                          href={`https://wa.me/5514999258631?text=${encodeURIComponent(
+                            `Olá! Segue o comprovante do sinal para a reserva ${b.codigo}.`
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center text-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[11px] shadow-2xs transition-colors"
+                        >
+                          <MessageCircle size={13} className="shrink-0" />
+                          <span>Enviar Comprovante via WhatsApp</span>
+                        </a>
+                      </div>
+                    )}
 
                     {isCancelado && (
                       <div className="pt-1 text-[11px] font-semibold text-gray-500">

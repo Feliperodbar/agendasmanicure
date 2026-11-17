@@ -7,7 +7,7 @@ import { fetchAvailableSlots } from '../utils/availability';
 import { todayInSaoPaulo } from '../utils/calendar';
 import { CLIENT_DEPOSIT_SEASONAL_MESSAGE, toSaoPauloISO } from '../utils/timezone';
 import { calculateDeposit, getDepositPercentageForDate } from '../utils/rules';
-import { Clock, CheckCircle2, ChevronRight, AlertCircle, Copy, Check, ArrowLeft } from 'lucide-react';
+import { Clock, CheckCircle2, ChevronRight, AlertCircle, Copy, Check, ArrowLeft, MessageCircle } from 'lucide-react';
 import type { Manicure } from '../types';
 
 interface Servico {
@@ -660,16 +660,18 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
 
       {/* PASSO 4: Tela de Confirmação com Código NM-#### e Pix em Destaque */}
       {step === 4 && bookingResult && (
-        <section aria-labelledby="sucesso-heading" className="text-center space-y-4 pt-2 animate-fadeIn">
-          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto shadow-xs ${
-            bookingResult.paymentStatus === 'confirmado' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'
-          }`}>
-            {bookingResult.paymentStatus === 'confirmado' ? <CheckCircle2 size={36} /> : <Clock size={36} />}
-          </div>
+        <section aria-label="Status da reserva" className="text-center space-y-4 pt-2 animate-fadeIn">
+          {bookingResult.paymentStatus === 'confirmado' && (
+            <>
+              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto shadow-xs bg-emerald-100 text-emerald-700">
+                <CheckCircle2 size={36} />
+              </div>
 
-          <h2 id="sucesso-heading" className="font-heading font-extrabold text-2xl text-gray-900 tracking-tight">
-            {bookingResult.paymentStatus === 'confirmado' ? 'Agendamento Confirmado!' : 'Reserva aguardando pagamento'}
-          </h2>
+              <h2 className="font-heading font-extrabold text-2xl text-gray-900 tracking-tight">
+                Agendamento Confirmado!
+              </h2>
+            </>
+          )}
 
           <div className="inline-block bg-gray-100 border border-gray-200 px-4 py-1.5 rounded-full font-heading font-extrabold text-lg text-gray-900 tracking-wide">
             {bookingResult.codigo}
@@ -697,8 +699,14 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
               )}
 
               <p className="text-sm font-semibold text-gray-900 leading-relaxed">
-                Para garantir o horário, o pagamento antecipado é de {bookingResult.sinalPct}%: <strong className="font-heading font-extrabold text-base text-gray-900">{formatMoney(bookingResult.valorSinal)}</strong> — Enviar o pix para a chave: <span className="font-heading font-bold text-[#802334] select-all bg-amber-100/90 px-1.5 py-0.5 rounded-md border border-amber-200">{bookingResult.chavePix}</span>
+                Para garantir o horário, o pagamento antecipado é de {bookingResult.sinalPct}%: <strong className="font-heading font-extrabold text-base text-gray-900">{formatMoney(bookingResult.valorSinal)}</strong> — Enviar o pix para a chave:
               </p>
+
+              <div className="flex justify-center">
+                <span className="font-heading font-bold text-sm text-[#802334] select-all bg-amber-100/90 px-3 py-1.5 rounded-xl border border-amber-200 text-center shadow-2xs break-all">
+                  {bookingResult.chavePix}
+                </span>
+              </div>
 
               <button
                 type="button"
@@ -709,9 +717,31 @@ export function ClientBookingView({ onGoToMyBookings, onGoToRules, onBackToHome,
                 {copiedPix ? 'Chave Pix copiada!' : 'Copiar Chave Pix'}
               </button>
 
-              <p className="text-[11px] text-gray-600 leading-normal">
-                Envie o comprovante para o WhatsApp da manicure. A reserva será cancelada e o horário liberado se o pagamento não for identificado em 20 minutos.
-              </p>
+              {/* Aviso em Destaque: Envio do Comprovante */}
+              <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-50 p-3.5 space-y-2.5 shadow-xs text-left">
+                <div className="flex items-center gap-2 text-emerald-950 font-heading font-extrabold text-xs uppercase tracking-wide">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-xs">
+                    <MessageCircle size={14} />
+                  </span>
+                  <span>Envio Obrigatório do Comprovante</span>
+                </div>
+
+                <a
+                  href={`https://wa.me/5514999258631?text=${encodeURIComponent(
+                    `Olá! Segue o comprovante de pagamento do sinal para a reserva ${bookingResult.codigo}.`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-heading font-bold text-xs flex items-center justify-center text-center gap-2 shadow-sm transition-all"
+                >
+                  <MessageCircle size={17} className="shrink-0" />
+                  <span>Enviar Comprovante via WhatsApp</span>
+                </a>
+
+                <p className="text-[11px] text-amber-950 font-bold leading-normal">
+                  ⚠️ A reserva será cancelada e o horário liberado se o pagamento não for identificado em até 20 minutos.
+                </p>
+              </div>
             </div>
           )}
 

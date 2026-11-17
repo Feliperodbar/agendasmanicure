@@ -15,7 +15,18 @@ export function RulesView({ onBack }: { onBack?: () => void }) {
       titulo: 'Remarcação',
       orientacoes: [
         'Peça a remarcação com pelo menos 24 horas de antecedência.',
-        'Em caso de imprevisto, fale com a manicure pelo WhatsApp que ela avalia com você.',
+        <span>
+          Em caso de imprevisto, fale com a manicure pelo WhatsApp{' '}
+          <a
+            href="https://wa.me/5514999258631"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-bold text-[#802334] underline hover:text-[#5c1825]"
+          >
+            14999258631 ((14) 99925-8631)
+          </a>{' '}
+          que ela avalia com você.
+        </span>,
       ],
     },
     {
@@ -54,8 +65,8 @@ export function RulesView({ onBack }: { onBack?: () => void }) {
           <section key={r.titulo} className="space-y-1.5">
             <h2 className="font-heading font-bold text-sm text-gray-900">{r.titulo}</h2>
             <ul className="list-disc pl-4 space-y-1 text-xs text-gray-600 font-medium">
-              {r.orientacoes.map((o) => (
-                <li key={o}>{o}</li>
+              {r.orientacoes.map((o, idx) => (
+                <li key={idx}>{o}</li>
               ))}
             </ul>
           </section>
