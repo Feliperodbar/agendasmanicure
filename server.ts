@@ -3,7 +3,7 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import crypto from 'crypto';
-import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, listClientesByIds, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistServicoOrThrow, refreshServicos, nextBookingCode, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistListaEspera, persistListaEsperaOrThrow, persistNotificacao, deleteSessao, countAgendamentosByManicure, deleteManicureCascade, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
+import { memoryDb, hashPin, isUsingSupabase, supabaseClient, loadSupabaseConfig, saveSupabaseConfig, hydrateSupabaseData, waivePendingNovemberDeposits, getAgendamentoById, getClienteByWhatsApp, listClientesByIds, persistClienteOrThrow, listAgendamentosByCliente, listAgendamentosInRange, listBloqueiosInRange, listBloqueiosByManicure, reservePixBooking, confirmPixBooking, expirePixBookings, findSupabaseSession, getSupabaseAdminAuth, getSupabaseAdminAuths, persistAdminAuth, persistSessao, persistManicure, persistServico, persistServicoOrThrow, refreshServicos, nextBookingCode, persistCliente, persistAgendamento, persistAgendamentoOrThrow, persistBloqueio, persistBloqueioOrThrow, persistListaEspera, persistListaEsperaOrThrow, persistNotificacao, deleteSessao, countAgendamentosByManicure, deleteManicureCascade, deleteSessionByToken, deleteAllSessoes, deleteAgendamento, deleteBloqueio, deleteBloqueioOrThrow, Cliente, Servico, Bloqueio, Agendamento, Notificacao, Manicure, AdminAuth, Sessao } from './src/server/db.js';
 import { validateWhatsApp } from './src/utils/phone.js';
 import { calculateAvailableSlots, BusinessHoursMap } from './src/utils/slots.js';
 import { calculateDeposit, checkRefundEligibility, computeDayCalendarColor, getDepositPercentageForDate } from './src/utils/rules.js';
@@ -441,25 +441,36 @@ app.get('/api/disponibilidade', async (req, res) => {
   // Filtrar agendamentos e bloqueios da data
   const nextDate = new Date(`${data}T12:00:00Z`);
   nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  const dayStartISO = toSaoPauloISO(data, '00:00');
+  const nextDayStartISO = toSaoPauloISO(nextDate.toISOString().slice(0, 10), '00:00');
+  const dayStartMs = new Date(dayStartISO).getTime();
+  const nextDayStartMs = new Date(nextDayStartISO).getTime();
+
   let dayBookings: Agendamento[];
+  let dayBlocks: Bloqueio[];
   try {
-    dayBookings = await listAgendamentosInRange(
-      toSaoPauloISO(data, '00:00'),
-      toSaoPauloISO(nextDate.toISOString().slice(0, 10), '00:00'),
-      manicure.id,
-    ) || Array.from(memoryDb.agendamentos.values()).filter((booking) =>
-      booking.data_hora_inicio.startsWith(data) &&
-      (!booking.manicure_id || booking.manicure_id === manicure.id)
-    );
+    const [fetchedBookings, fetchedBlocks] = await Promise.all([
+      listAgendamentosInRange(dayStartISO, nextDayStartISO, manicure.id),
+      listBloqueiosInRange(dayStartISO, nextDayStartISO, manicure.id),
+    ]);
+    dayBookings = fetchedBookings || Array.from(memoryDb.agendamentos.values()).filter((booking) => {
+      if (booking.manicure_id && booking.manicure_id !== manicure.id) return false;
+      const bMs = new Date(booking.data_hora_inicio).getTime();
+      return Number.isFinite(bMs) ? (bMs >= dayStartMs && bMs < nextDayStartMs) : booking.data_hora_inicio.startsWith(data);
+    });
+    dayBlocks = fetchedBlocks || Array.from(memoryDb.bloqueios.values()).filter((b) => {
+      if (b.manicure_id && b.manicure_id !== manicure.id) return false;
+      const bStart = new Date(b.data_inicio).getTime();
+      const bEnd = new Date(b.data_fim).getTime();
+      if (Number.isFinite(bStart) && Number.isFinite(bEnd)) {
+        return bStart < nextDayStartMs && bEnd >= dayStartMs;
+      }
+      return b.data_inicio.startsWith(data) || b.data_fim.startsWith(data);
+    });
   } catch (error) {
     console.error('Falha ao carregar disponibilidade atualizada:', error);
     return res.status(502).json({ error: 'Não foi possível verificar os horários disponíveis.' });
   }
-
-  const dayBlocks = Array.from(memoryDb.bloqueios.values()).filter((b) =>
-    (!b.manicure_id || b.manicure_id === manicure.id) &&
-    (b.data_inicio.startsWith(data) || b.data_fim.startsWith(data) || b.dia_inteiro)
-  );
 
   const slots = calculateAvailableSlots({
     dateStr: data,
@@ -498,18 +509,31 @@ app.get('/api/disponibilidade/mes', async (req, res) => {
 
   const startDate = `${monthMatch[1]}-${monthMatch[2]}-01`;
   const endDate = new Date(Date.UTC(year, monthNumber, 1)).toISOString().slice(0, 10);
+  const monthStartISO = toSaoPauloISO(startDate, '00:00');
+  const monthEndISO = toSaoPauloISO(endDate, '00:00');
+  const monthStartMs = new Date(monthStartISO).getTime();
+  const monthEndMs = new Date(monthEndISO).getTime();
   const hoursConfig = configValue(req, 'horarios_funcionamento', undefined);
   const bufferMinutes = Number(configValue(req, 'buffer_minutos', 10));
   try {
-    const monthBookings = await listAgendamentosInRange(
-      toSaoPauloISO(startDate, '00:00'),
-      toSaoPauloISO(endDate, '00:00'),
-      manicure.id,
-    ) || Array.from(memoryDb.agendamentos.values()).filter((booking) =>
-      new Date(booking.data_hora_inicio) >= new Date(toSaoPauloISO(startDate, '00:00')) &&
-      new Date(booking.data_hora_inicio) < new Date(toSaoPauloISO(endDate, '00:00')) &&
+    const [fetchedBookings, fetchedBlocks] = await Promise.all([
+      listAgendamentosInRange(monthStartISO, monthEndISO, manicure.id),
+      listBloqueiosInRange(monthStartISO, monthEndISO, manicure.id),
+    ]);
+    const monthBookings = fetchedBookings || Array.from(memoryDb.agendamentos.values()).filter((booking) =>
+      new Date(booking.data_hora_inicio).getTime() >= monthStartMs &&
+      new Date(booking.data_hora_inicio).getTime() < monthEndMs &&
       (!booking.manicure_id || booking.manicure_id === manicure.id)
     );
+    const monthBlocks = fetchedBlocks || Array.from(memoryDb.bloqueios.values()).filter((block) => {
+      if (block.manicure_id && block.manicure_id !== manicure.id) return false;
+      const bStart = new Date(block.data_inicio).getTime();
+      const bEnd = new Date(block.data_fim).getTime();
+      if (Number.isFinite(bStart) && Number.isFinite(bEnd)) {
+        return bStart < monthEndMs && bEnd >= monthStartMs;
+      }
+      return true;
+    });
 
     const dayCount = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
     const days = Array.from({ length: dayCount }, (_, index) => {
@@ -518,14 +542,20 @@ app.get('/api/disponibilidade/mes', async (req, res) => {
       nextDayDate.setUTCDate(nextDayDate.getUTCDate() + 1);
       const dayStart = toSaoPauloISO(day, '00:00');
       const dayEnd = toSaoPauloISO(nextDayDate.toISOString().slice(0, 10), '00:00');
-      const dayBookings = monthBookings.filter((booking) =>
-        new Date(booking.data_hora_inicio) >= new Date(dayStart) &&
-        new Date(booking.data_hora_inicio) < new Date(dayEnd)
-      );
-      const dayBlocks = Array.from(memoryDb.bloqueios.values()).filter((block) =>
-        (!block.manicure_id || block.manicure_id === manicure.id) &&
-        (block.data_inicio.startsWith(day) || block.data_fim.startsWith(day) || block.dia_inteiro)
-      );
+      const dayStartMs = new Date(dayStart).getTime();
+      const dayEndMs = new Date(dayEnd).getTime();
+      const dayBookings = monthBookings.filter((booking) => {
+        const bMs = new Date(booking.data_hora_inicio).getTime();
+        return bMs >= dayStartMs && bMs < dayEndMs;
+      });
+      const dayBlocks = monthBlocks.filter((block) => {
+        const bStart = new Date(block.data_inicio).getTime();
+        const bEnd = new Date(block.data_fim).getTime();
+        if (Number.isFinite(bStart) && Number.isFinite(bEnd)) {
+          return bStart < dayEndMs && bEnd >= dayStartMs;
+        }
+        return block.data_inicio.startsWith(day) || block.data_fim.startsWith(day);
+      });
       const slots = calculateAvailableSlots({
         dateStr: day,
         serviceDurationMinutes: servico.duracao_minutos,
@@ -569,6 +599,7 @@ app.post('/api/agendamentos', async (req, res) => {
   const sinalPct = getDepositPercentageForDate(data, Number(configValue(req, 'sinal_percentual', 50)));
   const bufferMin = Number(configValue(req, 'buffer_minutos', 10));
   const chavePix = String(configValue(req, 'chave_pix', 'nataliamarcela49@gmail.com'));
+  const hoursConfig = configValue(req, 'horarios_funcionamento', undefined);
 
   const duracao = servico.duracao_minutos;
   const startISO = toSaoPauloISO(data, horario);
@@ -586,11 +617,73 @@ app.post('/api/agendamentos', async (req, res) => {
   const endM = fimMinTotal % 60;
   const endISO = toSaoPauloISO(data, `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`);
 
-  // ANTI-DOUBLE-BOOKING NO SERVIDOR
-  const sStart = new Date(startISO).getTime();
-  const sEndWithBuffer = new Date(endISO).getTime() + bufferMin * 60000;
+  // ANTI-DOUBLE-BOOKING E VERIFICAÇÃO DE BLOQUEIOS NO SERVIDOR
+  const nextDate = new Date(`${data}T12:00:00Z`);
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  const dayStartISO = toSaoPauloISO(data, '00:00');
+  const dayEnd2359ISO = toSaoPauloISO(data, '23:59');
+  const nextDayStartISO = toSaoPauloISO(nextDate.toISOString().slice(0, 10), '00:00');
+  const dayStartMs = new Date(dayStartISO).getTime();
+  const dayEnd2359Ms = new Date(dayEnd2359ISO).getTime();
+  const nextDayStartMs = new Date(nextDayStartISO).getTime();
 
-  const hasConflict = Array.from(memoryDb.agendamentos.values()).some((a) => {
+  let dayBookings: Agendamento[];
+  let dayBlocks: Bloqueio[];
+  try {
+    const [fetchedBookings, fetchedBlocks] = await Promise.all([
+      listAgendamentosInRange(dayStartISO, nextDayStartISO, manicure.id),
+      listBloqueiosInRange(dayStartISO, nextDayStartISO, manicure.id),
+    ]);
+    dayBookings = fetchedBookings || Array.from(memoryDb.agendamentos.values()).filter((booking) => {
+      if (booking.manicure_id && booking.manicure_id !== manicure.id) return false;
+      const bMs = new Date(booking.data_hora_inicio).getTime();
+      return Number.isFinite(bMs) ? (bMs >= dayStartMs && bMs < nextDayStartMs) : booking.data_hora_inicio.startsWith(data);
+    });
+    dayBlocks = fetchedBlocks || Array.from(memoryDb.bloqueios.values()).filter((b) => {
+      if (b.manicure_id && b.manicure_id !== manicure.id) return false;
+      const bStart = new Date(b.data_inicio).getTime();
+      const bEnd = new Date(b.data_fim).getTime();
+      if (Number.isFinite(bStart) && Number.isFinite(bEnd)) {
+        return bStart < nextDayStartMs && bEnd >= dayStartMs;
+      }
+      return b.data_inicio.startsWith(data) || b.data_fim.startsWith(data);
+    });
+  } catch (error) {
+    console.error('Falha ao validar bloqueios e agendamentos existentes:', error);
+    return res.status(502).json({ error: 'Não foi possível verificar a disponibilidade do horário.' });
+  }
+
+  const sStart = new Date(startISO).getTime();
+  const sEnd = new Date(endISO).getTime();
+  const sEndWithBuffer = sEnd + bufferMin * 60000;
+
+  const hasBlockConflict = dayBlocks.some((b) => {
+    const bStart = new Date(b.data_inicio).getTime();
+    const bEnd = new Date(b.data_fim).getTime();
+    if (Number.isFinite(bStart) && Number.isFinite(bEnd)) {
+      if (b.dia_inteiro && bStart <= dayEnd2359Ms && bEnd >= dayStartMs) return true;
+      if (bStart <= dayStartMs && bEnd >= dayEnd2359Ms) return true;
+      return sStart < bEnd && sEnd > bStart;
+    }
+    return Boolean(b.dia_inteiro && b.data_inicio.startsWith(data));
+  });
+
+  if (hasBlockConflict) {
+    return res.status(409).json({
+      error: 'Esta data ou horário foi bloqueado pela manicure e não está disponível para agendamento.',
+    });
+  }
+
+  const availableSlots = calculateAvailableSlots({
+    dateStr: data,
+    serviceDurationMinutes: duracao,
+    businessHours: hoursConfig as string | BusinessHoursMap | undefined,
+    bufferMinutes: bufferMin,
+    existingBookings: dayBookings,
+    blocks: dayBlocks,
+  });
+
+  const hasConflict = dayBookings.some((a) => {
     if (
       a.status === 'cancelado' ||
       (a.pagamento_status === 'aguardando' && a.expires_at && new Date(a.expires_at).getTime() <= Date.now()) ||
@@ -601,9 +694,9 @@ app.post('/api/agendamentos', async (req, res) => {
     return sStart < aEndWithBuffer && sEndWithBuffer > aStart;
   });
 
-  if ((!supabaseClient || sinalPct === 0) && hasConflict) {
+  if (hasConflict || !availableSlots.some((s) => s.time === horario && s.available)) {
     return res.status(409).json({
-      error: 'Este horário acabou de ser reservado por outra cliente. Por favor, escolha outro horário.',
+      error: 'Este horário acabou de ser reservado ou bloqueado. Por favor, escolha outro horário.',
     });
   }
 
@@ -1519,38 +1612,79 @@ app.delete('/api/admin/servicos/:id', requireAdmin, async (req, res) => {
 });
 
 // CRUD Bloqueios
-app.get('/api/admin/bloqueios', requireAdmin, (req, res) => {
-  const bloqueios = Array.from(memoryDb.bloqueios.values()).filter((item) => isInAdminScope(req, item.manicure_id));
-  res.json({ bloqueios });
+app.get('/api/admin/bloqueios', requireAdmin, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const scope = adminManicureId(req);
+    const fetched = await listBloqueiosByManicure(scope);
+    const bloqueios = fetched || Array.from(memoryDb.bloqueios.values()).filter((item) => isInAdminScope(req, item.manicure_id));
+    res.json({ bloqueios });
+  } catch (error) {
+    console.error('Falha ao carregar bloqueios:', error);
+    res.status(502).json({ error: 'Não foi possível carregar os bloqueios.' });
+  }
 });
 
-app.post('/api/admin/bloqueios', requireAdmin, (req, res) => {
+app.post('/api/admin/bloqueios', requireAdmin, async (req, res) => {
   const { dataInicio, dataFim, motivo, diaInteiro } = req.body;
-  if (!dataInicio) return res.status(400).json({ error: 'Data de início é obrigatória.' });
+  if (!dataInicio || typeof dataInicio !== 'string') {
+    return res.status(400).json({ error: 'Data de início é obrigatória.' });
+  }
 
-  const id = `blk-${Date.now()}`;
+  const isDateOnlyInicio = /^\d{4}-\d{2}-\d{2}$/.test(dataInicio.trim());
+  const isDateOnlyFim = typeof dataFim === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dataFim.trim());
+
+  const normalizedInicio = isDateOnlyInicio
+    ? toSaoPauloISO(dataInicio.trim(), '00:00')
+    : dataInicio.trim();
+  const normalizedFim = dataFim && typeof dataFim === 'string'
+    ? (isDateOnlyFim ? toSaoPauloISO(dataFim.trim(), '23:59') : dataFim.trim())
+    : (isDateOnlyInicio || diaInteiro
+        ? toSaoPauloISO(dataInicio.trim().slice(0, 10), '23:59')
+        : normalizedInicio);
+
+  const startMs = new Date(normalizedInicio).getTime();
+  const endMs = new Date(normalizedFim).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs || (!diaInteiro && endMs === startMs)) {
+    return res.status(400).json({ error: 'O horário de término deve ser posterior ao horário de início.' });
+  }
+
+  const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const bloqueio: Bloqueio = {
     id,
-    data_inicio: dataInicio,
-    data_fim: dataFim || dataInicio,
+    data_inicio: normalizedInicio,
+    data_fim: normalizedFim,
     motivo: (motivo || 'Compromisso pessoal').trim(),
     dia_inteiro: !!diaInteiro,
     criado_em: now,
     manicure_id: adminManicureId(req),
   };
-  memoryDb.bloqueios.set(id, bloqueio);
-  void persistBloqueio(bloqueio);
-  res.status(201).json({ success: true, bloqueio });
+
+  try {
+    await persistBloqueioOrThrow(bloqueio);
+    memoryDb.bloqueios.set(id, bloqueio);
+    res.status(201).json({ success: true, bloqueio });
+  } catch (error) {
+    console.error('Falha ao salvar bloqueio:', error);
+    res.status(502).json({ error: 'Não foi possível salvar o bloqueio.' });
+  }
 });
 
-app.delete('/api/admin/bloqueios/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/bloqueios/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const bloqueio = memoryDb.bloqueios.get(id);
-  if (bloqueio && !isInAdminScope(req, bloqueio.manicure_id)) return res.status(403).json({ error: 'Bloqueio fora do seu perfil.' });
-  memoryDb.bloqueios.delete(id);
-  void deleteBloqueio(id);
-  res.json({ success: true });
+  if (bloqueio && !isInAdminScope(req, bloqueio.manicure_id)) {
+    return res.status(403).json({ error: 'Bloqueio fora do seu perfil.' });
+  }
+  try {
+    await deleteBloqueioOrThrow(id);
+    memoryDb.bloqueios.delete(id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Falha ao excluir bloqueio:', error);
+    res.status(502).json({ error: 'Não foi possível remover o bloqueio.' });
+  }
 });
 
 // Configurações e Horários

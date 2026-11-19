@@ -88,8 +88,18 @@ export function calculateAvailableSlots(params: {
   // 2. Verificar se há bloqueio de dia inteiro
   const dayStartISO = toSaoPauloISO(dateStr, '00:00');
   const dayEndISO = toSaoPauloISO(dateStr, '23:59');
+  const dayStartMs = new Date(dayStartISO).getTime();
+  const dayEndMs = new Date(dayEndISO).getTime();
 
   const hasFullDayBlock = blocks.some((b) => {
+    const bStartMs = new Date(b.data_inicio).getTime();
+    const bEndMs = new Date(b.data_fim).getTime();
+    if (Number.isFinite(bStartMs) && Number.isFinite(bEndMs)) {
+      if (b.dia_inteiro) {
+        return bStartMs <= dayEndMs && bEndMs >= dayStartMs;
+      }
+      return bStartMs <= dayStartMs && bEndMs >= dayEndMs;
+    }
     if (b.dia_inteiro) {
       return b.data_inicio.startsWith(dateStr) || (b.data_inicio <= dayStartISO && b.data_fim >= dayEndISO);
     }
@@ -147,12 +157,15 @@ export function calculateAvailableSlots(params: {
       continue;
     }
 
-    // Regra: Bloqueios parciais
+    // Regra: Bloqueios parciais (se o bloqueio vai até o fechamento, também bloqueia o slot extra de fechamento)
     const hasBlockConflict = blocks.some((b) => {
       const bStart = new Date(b.data_inicio).getTime();
       const bEnd = new Date(b.data_fim).getTime();
       const sStart = new Date(slotStartISO).getTime();
       const sEnd = new Date(slotEndISO).getTime();
+      if (slotStartMinTotal === closeMinutes && bStart < sStart && bEnd >= sStart) {
+        return true;
+      }
       return sStart < bEnd && sEnd > bStart;
     });
 

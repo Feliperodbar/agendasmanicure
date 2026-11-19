@@ -86,6 +86,10 @@ test('respeita buffer de 10 min entre agendamentos', () => {
 test('bloqueio integral e bloqueio que cobre todo o expediente deixam o dia indisponível', () => {
   for (const block of [
     { data_inicio: '2026-11-09T00:00:00.000-03:00', data_fim: '2026-11-09T23:59:00.000-03:00', dia_inteiro: true },
+    { data_inicio: '2026-11-09T03:00:00+00:00', data_fim: '2026-11-10T02:59:00+00:00', dia_inteiro: true },
+    { data_inicio: '2026-11-09T03:00:00+00:00', data_fim: '2026-11-10T02:59:00+00:00', dia_inteiro: false },
+    { data_inicio: '2026-11-09T09:00:00.000-03:00', data_fim: '2026-11-09T18:00:00.000-03:00' },
+    { data_inicio: '2026-11-09T12:00:00+00:00', data_fim: '2026-11-09T21:00:00+00:00' },
     { data_inicio: '2026-11-09T09:00:00.000-03:00', data_fim: '2026-11-09T20:00:00.000-03:00' },
   ]) {
     assert.deepEqual(calculateAvailableSlots({
@@ -95,6 +99,31 @@ test('bloqueio integral e bloqueio que cobre todo o expediente deixam o dia indi
       nowReference: new Date('2026-11-01T08:00:00-03:00'),
     }), []);
   }
+});
+
+test('bloqueio integral retornado em UTC pelo Supabase não afeta dias vizinhos', () => {
+  const utcBlock = {
+    data_inicio: '2026-11-09T03:00:00+00:00', // 2026-11-09 00:00 BRT
+    data_fim: '2026-11-10T02:59:00+00:00',    // 2026-11-09 23:59 BRT
+    dia_inteiro: true,
+  };
+
+  // Dia 09 deve ficar 100% bloqueado
+  assert.deepEqual(calculateAvailableSlots({
+    dateStr: '2026-11-09',
+    serviceDurationMinutes: 60,
+    blocks: [utcBlock],
+    nowReference: new Date('2026-11-01T08:00:00-03:00'),
+  }), []);
+
+  // Dia 10 (vizinho) deve continuar com horários disponíveis
+  const nextDaySlots = calculateAvailableSlots({
+    dateStr: '2026-11-10',
+    serviceDurationMinutes: 60,
+    blocks: [utcBlock],
+    nowReference: new Date('2026-11-01T08:00:00-03:00'),
+  });
+  assert.ok(nextDaySlots.length > 0);
 });
 
 test('um dia inteiramente ocupado, incluindo o buffer, não tem horários livres', () => {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { todayInSaoPaulo } from '../utils/calendar';
 import { formatInSaoPaulo, toSaoPauloISO } from '../utils/timezone';
 import { ShieldAlert, Plus, Trash2, Calendar, Clock } from 'lucide-react';
 
@@ -8,7 +9,7 @@ export function AdminBloqueiosView() {
   const [dataInicio, setDataInicio] = useState('');
   const [horaInicio, setHoraInicio] = useState('09:00');
   const [horaFim, setHoraFim] = useState('18:00');
-  const [diaInteiro, setDiaInteiro] = useState(false);
+  const [diaInteiro, setDiaInteiro] = useState(true);
   const [motivo, setMotivo] = useState('');
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -16,13 +17,12 @@ export function AdminBloqueiosView() {
 
   useEffect(() => {
     loadBloqueios();
-    const today = new Date().toISOString().split('T')[0];
-    setDataInicio(today);
+    setDataInicio(todayInSaoPaulo());
   }, []);
 
   const loadBloqueios = async () => {
     try {
-      const res = await fetch('/api/admin/bloqueios');
+      const res = await fetch('/api/admin/bloqueios', { cache: 'no-store' });
       const data = await res.json();
       setBloqueios(data.bloqueios || []);
     } catch {
@@ -33,6 +33,11 @@ export function AdminBloqueiosView() {
   const handleCreateBlock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!dataInicio) return;
+
+    if (!diaInteiro && horaFim <= horaInicio) {
+      setFeedback({ text: 'O horário de término deve ser posterior ao horário de início.', type: 'error' });
+      return;
+    }
 
     const startISO = diaInteiro ? toSaoPauloISO(dataInicio, '00:00') : toSaoPauloISO(dataInicio, horaInicio);
     const endISO = diaInteiro ? toSaoPauloISO(dataInicio, '23:59') : toSaoPauloISO(dataInicio, horaFim);
@@ -54,7 +59,8 @@ export function AdminBloqueiosView() {
         setMotivo('');
         loadBloqueios();
       } else {
-        setFeedback({ text: 'Erro ao registrar bloqueio.', type: 'error' });
+        const err = await res.json().catch(() => ({}));
+        setFeedback({ text: err.error || 'Erro ao registrar bloqueio.', type: 'error' });
       }
     } catch {
       setFeedback({ text: 'Falha de conexão.', type: 'error' });

@@ -3,6 +3,18 @@
     {
       "source": "/api/push/:match*",
       "destination": "/api/[...path]"
+    },
+    {
+      "source": "/api/disponibilidade/:match*",
+      "destination": "/api/[...path]"
+    },
+    {
+      "source": "/api/agendamentos/:match*",
+      "destination": "/api/[...path]"
+    },
+    {
+      "source": "/api/admin/bloqueios/:match*",
+      "destination": "/api/admin/[...path]"
     }
   ]
 }

@@ -409,6 +409,65 @@ export async function listAgendamentosInRange(
   return data as Agendamento[];
 }
 
+export async function listBloqueiosInRange(
+  startISO: string,
+  endISO: string,
+  manicureId?: string | null,
+): Promise<Bloqueio[] | null> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    return null;
+  }
+
+  const { data, error } = await supabaseClient
+    .from('bloqueios')
+    .select('*')
+    .lt('data_inicio', endISO)
+    .gte('data_fim', startISO)
+    .order('data_inicio', { ascending: true });
+
+  if (error) {
+    throw new Error(`Supabase bloqueios range read failed: ${error.message}`);
+  }
+
+  const rows = (data || []) as Bloqueio[];
+  for (const row of rows) {
+    if (row.id) memoryDb.bloqueios.set(String(row.id), row);
+  }
+
+  return rows.filter((b) => !manicureId || !b.manicure_id || b.manicure_id === manicureId);
+}
+
+export async function listBloqueiosByManicure(
+  manicureId?: string | null,
+): Promise<Bloqueio[] | null> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    return null;
+  }
+
+  const { data, error } = await supabaseClient
+    .from('bloqueios')
+    .select('*')
+    .order('data_inicio', { ascending: true });
+
+  if (error) {
+    throw new Error(`Supabase bloqueios read failed: ${error.message}`);
+  }
+
+  const rows = (data || []) as Bloqueio[];
+  memoryDb.bloqueios.clear();
+  for (const row of rows) {
+    if (row.id) memoryDb.bloqueios.set(String(row.id), row);
+  }
+
+  return rows.filter((item) => !manicureId || item.manicure_id === manicureId);
+}
+
 export async function reservePixBooking(
   booking: Agendamento,
   bufferMinutes: number,
@@ -623,6 +682,19 @@ export async function persistServicoOrThrow(value: Servico): Promise<void> {
 export const persistCliente = (value: Cliente) => supabaseUpsert('clientes', value);
 export const persistAgendamento = (value: Agendamento) => supabaseUpsert('agendamentos', value);
 export const persistBloqueio = (value: Bloqueio) => supabaseUpsert('bloqueios', value);
+export async function persistBloqueioOrThrow(value: Bloqueio): Promise<void> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    return;
+  }
+  const { error } = await supabaseClient.from('bloqueios').upsert(value);
+  if (error) {
+    console.error('Supabase bloqueios upsert failed:', error);
+    throw new Error(`Não foi possível salvar o bloqueio no Supabase: ${error.message}`);
+  }
+}
 export const persistListaEspera = (value: ListaEspera) => supabaseUpsert('lista_espera', value);
 export async function persistListaEsperaOrThrow(value: ListaEspera): Promise<void> {
   if (!supabaseClient) {
@@ -636,6 +708,19 @@ export const persistNotificacao = (value: Notificacao) => supabaseUpsert('notifi
 export const persistManicure = (value: Manicure) => supabaseUpsert('manicures', value);
 export const deleteAgendamento = (id: string) => supabaseDelete('agendamentos', id);
 export const deleteBloqueio = (id: string) => supabaseDelete('bloqueios', id);
+export async function deleteBloqueioOrThrow(id: string): Promise<void> {
+  if (!supabaseClient) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Supabase não configurado no ambiente de produção.');
+    }
+    return;
+  }
+  const { error } = await supabaseClient.from('bloqueios').delete().eq('id', id);
+  if (error) {
+    console.error('Supabase bloqueios delete failed:', error);
+    throw new Error(`Não foi possível remover o bloqueio no Supabase: ${error.message}`);
+  }
+}
 export const persistSessao = (value: Sessao) => supabaseUpsert('sessoes', value);
 export const deleteSessao = (id: string) => supabaseDelete('sessoes', id);
 
